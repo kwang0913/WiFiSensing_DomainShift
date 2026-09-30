@@ -1,0 +1,75 @@
+# Single experiment. Paths in data.datasets are relative to python/dataset/.
+split_seed: 42               # Data splits and scorer CV folds
+training_seed: 42            # Initialization, shuffle, Dropout and augmentation
+stage: train                 # train: stop after training plots; full: also evaluate CP
+prepare_npy_cache: false
+
+data:
+  datasets: [setting_dataset]
+  filename_template: "{user}_{activity}_{position}[_r{recording}]_time.npy"
+  task: user
+
+split:
+  mode: domain_holdout       # domain_holdout / random
+  domain_key: activity      # Filename metadata field, distinct from data.task
+  test_domains: [walk]      # One or more values, e.g. [baking, walk]; all their recordings go to test
+  validation_fraction: 0.10
+  calibration_fraction: 0.20
+  test_fraction: 0.20       # Used only in random mode; other fractions use source segments in holdout mode
+
+model:
+  embedding_dim: 32
+  stft_frequency_bins: 32    # 32 for setting_dataset/self_time; 64 for crossroom/deep_l
+
+training:
+  epochs: 50
+  batch_size: 32
+  optimizer: sgd
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  optimizer_kwargs: {momentum: 0.9, nesterov: true}      # SGD example: {momentum: 0.9, nesterov: true}
+  patience: null
+  min_delta: 0.0
+
+scheduler:
+  name: cosine                # none / cosine / plateau; updated once per epoch
+  kwargs: {eta_min: 0.000001}                # cosine: {eta_min: 0.000001}; plateau: {factor: 0.5, patience: 5}
+
+augmentation:
+  enabled: true            # Master switch; individual switches below select the combination
+  time_noise:
+    enabled: true
+    kind: gaussian          # none / gaussian / uniform
+    relative_std: 0.02      # Noise std relative to each sample/group RMS
+    probability: 0.5       # Per-sample chance of adding noise
+  time_mask:
+    enabled: true
+    max_fraction: 0.05      # Random width: 0..floor(T * fraction), shared across rows/groups
+    probability: 0.5       # Per-sample chance of selecting a mask; width can still be zero
+  stft_mask:
+    enabled: true
+    frequency_bins: 32      # 32 for setting_dataset/self_time; 64 for crossroom/deep_l
+    time_max_fraction: 0.05       # Maximum fraction of time frames, not flattened width
+    frequency_max_fraction: 0.05  # Maximum fraction of frequency bins
+    probability: 0.5             # Applied independently per sample and per axis
+
+monitoring:
+  enabled: true
+  project: wifi-conformal
+  mode: online              # online after wandb login
+  entity: null
+  name: null
+  gradient_interval: 100
+  parameter_histograms: true
+  activation_gradients: true
+  layers: null               # e.g. ["time_encoder.1", "fusion.*", "embedding"]
+
+score:
+  kind: kde                  # kde, svm, hbgb
+  kernel: gaussian
+  bandwidth: 1.0
+
+calibration:
+  alpha: 0.1
+  class_conditional: true
+alpha_grid: [0.01, 0.02, 0.05, 0.10]

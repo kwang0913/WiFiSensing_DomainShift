@@ -1,0 +1,10 @@
+numpy
+scipy
+scikit-learn
+joblib
+torch
+PyYAML>=6,<7
+matplotlib
+wandb>=0.19,<1
+papermill>=2.6,<3
+ipykernel

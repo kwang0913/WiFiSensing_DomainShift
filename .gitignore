@@ -1,0 +1,58 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Cache directories at any depth
+cache/
+caches/
+.cache/
+*_cache/
+.*_cache/
+.ipynb_checkpoints/
+
+# Audit artifacts and tests at any depth
+audit/
+audits/
+tests/
+test/
+test_data/
+
+# Test coverage artifacts
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.tox/
+.nox/
+
+# Local Python environments
+.venv/
+venv/
+env/
+
+# Editor and operating-system files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# MATLAB autosave files
+*.asv
+*.m~
+
+# Regenerable NumPy feature cache
+/python/dataset/
+
+# Dataset contents; keep the data documentation
+/data/*
+!/data/README.md
+
+# Historical Python implementations
+/python/Archive/
+
+# Training outputs
+/python/runs/
