@@ -4,16 +4,16 @@ Raw CSI recordings and extracted MAT features. Data and generated NPY caches are
 
 ## Datasets and labels
 
-Active feature files and NPY labels verified on 2026-09-29; `Archive` and `MergeOriginals` are excluded. Counts are files, not segments. Label values are case-sensitive.
+The inventory covers feature files used by the notebook, with NPY labels verified on 2026-09-29. Counts are files, not segments. Label values are case-sensitive.
 
 | Dataset | Files | `user` labels | `activity` labels | `position` labels |
 |---|---:|---|---|---|
-| setting_dataset | 72 | `cong`, `dongxin`, `hanyi`, `pengpei`, `yaleibi`, `zhoujian` (6) | `baking`, `cooking`, `raisingarm`, `walk` (4) | `p1` |
-| self_time | 150 | `baiyang`, `cong`, `song`, `xiangyu`, `zhenzhe` (5) | `doc`, `squat` (2) | `c1`, `c2`, `c3`, `c4`, `c5` |
-| deep_l | 30 | `changming`, `cong`, `honglu`, `qiufan`, `tianfang` (5) | `clapping`, `drawcircle`, `drawingZ`, `pushpull`, `sliding`, `wipe` (6) | `p1` |
-| crossroom | 125 | `bin`, `changming`, `cong`, `kailong`, `linqi`, `runtian`, `tianfang`, `wenjin`, `xin`, `yilin` (10) | `doc`, `sit`, `squat`, `walk`, `wipe` (5) | `103`, `501`, `503` |
+| setting_dataset | 72 | `user_1` ~ `user_6` | `baking`, `cooking`, `raisingarm`, `walk` (4) | `p1` |
+| self_time | 150 | `user_1`, ~ `user_5` | `doc`, `squat` (2) | `c1`, `c2`, `c3`, `c4`, `c5` |
+| deep_l | 30 | `user_1`, ~ `user_5` | `clapping`, `drawcircle`, `drawingZ`, `pushpull`, `sliding`, `wipe` (6) | `p1` |
+| crossroom | 125 | `user_1`, ~ `user_10` | `doc`, `sit`, `squat`, `walk`, `wipe` (5) | `103`, `501`, `503` |
 
-Each listed user has all activities listed for that dataset, but recording counts and position coverage vary. Combining setting_dataset and self_time gives 10 user labels and 6 activities, not a complete user-by-activity grid. Only `cong` is shared by name; identical user tokens are treated as one class. Holding out `walk` tests 6 of those 10 users.
+Each listed user has all activities listed for that dataset, but recording counts and position coverage vary.
 
 ## File organization
 
@@ -26,7 +26,7 @@ Each listed user has all activities listed for that dataset, but recording count
 
 Source DAT recordings are available only for crossroom and deep_l. Files use `<user>_<activity>_<position>[_rNN]`: `.dat` for recordings, `.mat` for CSI caches, and `_raw.mat` for extracted features. `_rNN` identifies repeated recordings. Physical room dimensions and antenna placements are not documented.
 
-Two active environment1 feature files contain merged recordings; `merge_source_index` and `merge_info` retain their provenance. Exclude archived originals to avoid duplicates. Canonical activity aliases include `document → doc`, `walking/walkingtraj2 → walk`, `sitting → sit`, `clappping → clapping`, and `wiping/sweeping → wipe`.
+Two active environment1 feature files contain merged recordings; `merge_source_index` and `merge_info` retain their provenance. Canonical activity aliases include `document → doc`, `walking/walkingtraj2 → walk`, `sitting → sit`, `clappping → clapping`, and `wiping/sweeping → wipe`.
 
 ## Feature format
 
@@ -42,7 +42,7 @@ The `_raw.mat` suffix means time-domain features, not raw complex CSI.
 - Last dimension: dB amplitude, time-unwrapped relative phase, conjugate-product magnitude.
 - Time width: 1200 or 4000 samples at 1000 Hz. STFT width: 32 bins × 21 frames or 64 bins × 65 frames, flattened with frequency varying fastest.
 
-Time and STFT windows share a detection peak but have different temporal coverage. Filtered time features can be negative. Generated features include `extraction_info` with configuration and source/segment metadata; older self_time/setting_dataset files generally lack it.
+Time and STFT windows share a detection peak but have different temporal coverage. Filtered time features can be negative. Generated features include `extraction_info` with configuration and source/segment metadata; self_time/setting_dataset files generally lack it.
 
 ```matlab
 s = load('path/to/feature_raw.mat');

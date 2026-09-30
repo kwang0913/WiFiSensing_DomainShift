@@ -32,7 +32,7 @@ Edit [baseline.yaml](configs/baseline.yaml) or supply a partial override. [sgd_c
 | `score.kind` | `kde`, `svm`, or `hbgb` |
 | `calibration.alpha` | Target miscoverage level |
 
-Omitted fields inherit the baseline. Optimizer/scheduler kwargs replace inherited dictionaries; changing algorithms clears their old kwargs. Legacy `seed` sets both seeds unless explicitly overridden. Scheduler and augmentation default to off.
+Omitted fields inherit the baseline. Optimizer/scheduler kwargs replace inherited dictionaries; changing algorithms clears inherited algorithm-specific kwargs. Scheduler and augmentation default to off.
 
 ## Data and splitting
 
@@ -57,7 +57,7 @@ split:
 2. Expand source files into `(recording_index, segment_index)` pairs. Within each task label, shuffle and allocate validation/calibration fractions; round down with at least one segment each. The remainder goes to training.
 3. Check that target labels exist in training. Source subsets may share recordings, but never the same segment; no target-domain segment enters them.
 
-`test_fraction` is unused in domain-holdout mode. For activity recognition across users, set `task: activity`, `domain_key: user`, and list held-out users. `mode: random` retains the original four-way **recording** split. Only indices are split; full signal arrays stay on disk.
+`test_fraction` is unused in domain-holdout mode. For activity recognition across users, set `task: activity`, `domain_key: user`, and list held-out users. `mode: random` uses a four-way **recording** split. Only indices are split; full signal arrays stay on disk.
 
 **Why split source segments?** With limited recordings, this retains samples for every task class in training, validation, and calibration. It deliberately permits shared source recordings; distinct segment indices do not imply independent observations. The target domains remain fully held out. This is the current data-availability tradeoff, not a claim of recording-independent validation or calibration.
 
@@ -80,7 +80,7 @@ The default dataset combination is not a complete user-by-activity grid: `walk` 
 
 All convolutions use valid padding to operate on observed input regions. Hidden blocks use LeakyReLU and BatchNorm; both inputs also have BatchNorm. Only the embedding block uses Dropout(0.5), disabled during evaluation/export. BatchNorm uses source-training running statistics at evaluation; the architecture does not enforce domain invariance.
 
-Set `model.stft_frequency_bins` to 32 for setting_dataset/self_time or 64 for crossroom/deep_l; enabled STFT masking must match. Time and STFT windows share a detection peak but cover different durations, so dual-branch gains can also reflect additional context. Previous flattened-STFT checkpoints cannot be loaded into this architecture.
+Set `model.stft_frequency_bins` to 32 for setting_dataset/self_time or 64 for crossroom/deep_l; enabled STFT masking must match. Time and STFT windows share a detection peak but cover different durations, so dual-branch gains can also reflect additional context.
 
 ## Augmentation choices
 
