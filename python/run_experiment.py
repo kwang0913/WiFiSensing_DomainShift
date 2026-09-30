@@ -9,7 +9,7 @@ import nbformat
 import papermill
 import yaml
 
-from step00_config.experiment import BASELINE, load_config
+from step00_config.loader import BASELINE, load_config
 
 PYTHON_ROOT = Path(__file__).resolve().parent
 

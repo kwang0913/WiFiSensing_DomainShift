@@ -1,4 +1,4 @@
-"""Default experiment parameters; override them in run.ipynb."""
+"""Configuration types for experiment components."""
 from dataclasses import dataclass, field
 
 
@@ -77,3 +77,10 @@ class HBGBConfig:
 class CalibrationConfig:
     alpha: float = 0.1
     class_conditional: bool = True
+
+
+@dataclass
+class DualCNNConfig:
+    embedding_dim: int = 32
+    stft_frequency_bins: int = 32
+    kind: str = field(default="dual_cnn", init=False)

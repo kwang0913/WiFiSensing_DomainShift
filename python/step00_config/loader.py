@@ -4,9 +4,9 @@ from pathlib import Path
 
 import yaml
 
-from .config import KDEConfig, SVMConfig, HBGBConfig
+from .schema import KDEConfig, SVMConfig, HBGBConfig
 
-BASELINE = Path(__file__).resolve().parents[1] / "configs/baseline.yaml"
+BASELINE = Path(__file__).resolve().parents[1] / "experiments/baseline.yaml"
 SCORE_CONFIGS = {"kde": KDEConfig, "svm": SVMConfig, "hbgb": HBGBConfig}
 
 

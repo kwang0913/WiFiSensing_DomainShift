@@ -45,7 +45,7 @@ class MarginScorer:
 
 def build_scorer(config, classes, seed=42):
     """Dispatch by configuration type; no irrelevant KDE settings for SVM/HBGB."""
-    from step00_config.config import KDEConfig, SVMConfig, HBGBConfig
+    from step00_config.schema import KDEConfig, SVMConfig, HBGBConfig
     if isinstance(config, KDEConfig):
         return KDEScorer(classes, kernel=config.kernel, bandwidth=config.bandwidth)
     if isinstance(config, SVMConfig):

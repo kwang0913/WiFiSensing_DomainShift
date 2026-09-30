@@ -13,7 +13,7 @@ Study conformal prediction under domain shift using WiFi CSI segments.
 Open [python/run.ipynb](python/run.ipynb) and run the cells in order, or execute a configured run from the project root:
 
 ```bash
-python python/run_experiment.py --config python/configs/baseline.yaml
+python python/run_experiment.py --config python/experiments/baseline.yaml
 ```
 
 See the [Python guide](python/README.md) for installation, split design, kernel and augmentation choices, and saved results.

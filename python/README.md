@@ -9,16 +9,32 @@ From the repository root, in your Python environment:
 ```bash
 python -m pip install -r python/requirements.txt
 python -m ipykernel install --user --name wifi-cp --display-name "Python (wifi-cp)"
-python python/run_experiment.py --config python/configs/baseline.yaml
+python python/run_experiment.py --config python/experiments/baseline.yaml
 ```
 
 For interactive use, open the notebook with that kernel, set `config_path` in the first cell, and run in order. Restart the kernel for a fresh experiment after changing model code.
 
 The CLI executes a notebook copy through Papermill. `stage: train` stops after training plots; `stage: full` starts a new training run and also evaluates conformal prediction. This setting only limits CLI execution. Optional arguments: `--kernel NAME`, `--output-dir NEW_PATH`.
 
+## Code layout
+
+| Directory | Responsibility |
+|---|---|
+| `experiments/` | Experiment YAML files |
+| `step00_config/` | Configuration types (`schema.py`) and loading/merging (`loader.py`) |
+| `step01_preprocessing/` | Feature normalization |
+| `step02_models/` | CNN architecture and model construction |
+| `step03_training/` | Augmentation, learning-rate scheduling, and monitoring |
+| `step04_scores/` | KDE and classifier-based nonconformity scores |
+| `step05_calibration/` | Class-conditional or pooled rank calibration |
+| `step06_prediction/` | Prediction-set construction |
+| `step07_evaluation/` | Coverage, set size, and classification metrics |
+
+The training loop stays in `run.ipynb`; `run_experiment.py` executes it from YAML. Edit YAML for experiments; `step00_config/schema.py` defines the Python configuration objects used by components.
+
 ## Configuration
 
-Edit [baseline.yaml](configs/baseline.yaml) or supply a partial override. [sgd_cosine.yaml](configs/sgd_cosine.yaml) shows SGD, scheduling, and augmentation.
+Edit [baseline.yaml](experiments/baseline.yaml) or supply a partial override. [sgd_cosine.yaml](experiments/sgd_cosine.yaml) shows SGD, scheduling, and augmentation.
 
 | Setting | Purpose |
 |---|---|
@@ -67,7 +83,7 @@ The default dataset combination is not a complete user-by-activity grid: `walk` 
 
 ## Model and kernel choices
 
-[dual_cnn.py](step03_models/dual_cnn.py) accepts paired `[B,3,270,T]` tensors. The 270 rows combine subcarriers and antenna links/pairs, rather than one homogeneous spatial axis. Full-height first kernels fuse these rows without sliding across their concatenation boundaries.
+[dual_cnn.py](step02_models/dual_cnn.py) accepts paired `[B,3,270,T]` tensors. The 270 rows combine subcarriers and antenna links/pairs, rather than one homogeneous spatial axis. Full-height first kernels fuse these rows without sliding across their concatenation boundaries.
 
 | Branch | First convolution: channels; kernel; stride | Second convolution: channels; kernel; stride | Adaptive pooling |
 |---|---|---|---|
