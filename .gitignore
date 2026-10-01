@@ -48,6 +48,7 @@ Thumbs.db
 /python/dataset/
 /python/experiments/
 /python/slurm/
+!/python/experiments/baseline.yaml
 
 # Dataset contents; keep the data documentation
 /data/*
