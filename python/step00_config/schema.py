@@ -1,5 +1,6 @@
 """Configuration types for experiment components."""
 from dataclasses import dataclass, field
+import math
 
 
 @dataclass
@@ -84,3 +85,62 @@ class DualCNNConfig:
     embedding_dim: int = 32
     stft_frequency_bins: int = 32
     kind: str = field(default="dual_cnn", init=False)
+
+
+@dataclass
+class AdversarialConfig:
+    enabled: bool = False
+    conditional: bool = False
+    domain_key: str = "activity"
+    max_weight: float = 0.1
+    warmup_epochs: int = 10
+    hidden_dim: int = 64
+    steps_per_batch: int = 2
+    optimizer: str = "sgd"
+    learning_rate: float = 0.001
+    weight_decay: float = 0.0001
+    optimizer_kwargs: dict = field(default_factory=lambda: {"momentum": 0.9, "nesterov": True})
+    scheduler: dict = field(default_factory=lambda: {"name": "none", "kwargs": {}})
+
+    def __post_init__(self):
+        if not isinstance(self.steps_per_batch, int) or self.steps_per_batch < 1:
+            raise ValueError("Adversarial steps_per_batch must be a positive integer")
+        if not math.isfinite(self.learning_rate) or self.learning_rate <= 0:
+            raise ValueError("Adversarial learning_rate must be finite and positive")
+        if not math.isfinite(self.weight_decay) or self.weight_decay < 0:
+            raise ValueError("Adversarial weight_decay must be finite and nonnegative")
+        if not math.isfinite(self.max_weight) or self.max_weight < 0:
+            raise ValueError("Adversarial max_weight must be finite and nonnegative")
+        if not isinstance(self.warmup_epochs, int) or self.warmup_epochs < 0:
+            raise ValueError("Adversarial warmup_epochs must be a nonnegative integer")
+        if not isinstance(self.hidden_dim, int) or self.hidden_dim < 1:
+            raise ValueError("Adversarial hidden_dim must be a positive integer")
+
+
+@dataclass
+class ContrastiveConfig:
+    enabled: bool = False
+    weight: float = 0.1
+    temperature: float = 0.1
+
+    def __post_init__(self):
+        if not math.isfinite(self.weight) or self.weight < 0:
+            raise ValueError("Contrastive weight must be finite and nonnegative")
+        if not math.isfinite(self.temperature) or self.temperature <= 0:
+            raise ValueError("Contrastive temperature must be finite and positive")
+
+
+@dataclass
+class SamplingConfig:
+    enabled: bool = False
+    classes_per_batch: int = 6
+    domains_per_class: int = 3
+    samples_per_domain: int = 4
+
+    def __post_init__(self):
+        for name in ("classes_per_batch", "domains_per_class", "samples_per_domain"):
+            value = getattr(self, name)
+            if not isinstance(value, int) or value < 1:
+                raise ValueError(f"Sampling {name} must be a positive integer")
+        if self.enabled and (self.classes_per_batch < 2 or self.domains_per_class < 2):
+            raise ValueError("Balanced batches require at least two classes and two domain slots per class")

@@ -17,9 +17,6 @@ PYTHON_ROOT = Path(__file__).resolve().parent
 def run_experiment(config_path=BASELINE, output_dir=None, kernel="wifi-cp"):
     config = load_config(config_path)
     notebook = nbformat.read(PYTHON_ROOT / "run.ipynb", as_version=4)
-    if config["stage"] == "train":
-        end = next(i for i, cell in enumerate(notebook.cells) if cell.id == "export-notes")
-        notebook.cells = notebook.cells[:end]
     for cell in notebook.cells:
         if cell.cell_type == "code":
             cell.outputs = []
@@ -33,7 +30,7 @@ def run_experiment(config_path=BASELINE, output_dir=None, kernel="wifi-cp"):
     # Execute a copy: the source notebook is never overwritten.
     notebook_path = run_dir / "run.ipynb"
     nbformat.write(notebook, notebook_path)
-    status = {"status": "running", "stage": config["stage"], "kernel": kernel,
+    status = {"status": "running", "kernel": kernel,
               "started_at": datetime.now(timezone.utc).isoformat(),
               "source_config": str(Path(config_path).expanduser().resolve())}
     status_path = run_dir / "execution.json"

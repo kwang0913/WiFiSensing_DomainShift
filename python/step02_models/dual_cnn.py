@@ -12,7 +12,8 @@ _BN = dict(eps=1e-3, momentum=0.01)
 
 def conv_block(inputs, outputs, kernel, stride, dropout=False):
     layers = [nn.Conv2d(inputs, outputs, kernel, stride=stride, padding=0),
-              nn.LeakyReLU(0.1),
+            #   nn.LeakyReLU(0.1),
+              nn.ReLU(),
               nn.BatchNorm2d(outputs, **_BN)]
     if dropout:
         layers.append(nn.Dropout(0.5))
@@ -21,7 +22,8 @@ def conv_block(inputs, outputs, kernel, stride, dropout=False):
 
 def dense_block(inputs, outputs, dropout=False):
     layers = [nn.Linear(inputs, outputs),
-              nn.LeakyReLU(0.1),
+            #   nn.LeakyReLU(0.1),
+              nn.ReLU(),
               nn.BatchNorm1d(outputs, **_BN)]
     if dropout:
         layers.append(nn.Dropout(0.5))

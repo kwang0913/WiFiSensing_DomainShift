@@ -46,6 +46,8 @@ Thumbs.db
 
 # Regenerable NumPy feature cache
 /python/dataset/
+/python/experiments/
+/python/slurm/
 
 # Dataset contents; keep the data documentation
 /data/*

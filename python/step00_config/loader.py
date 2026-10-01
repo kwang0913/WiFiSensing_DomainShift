@@ -15,6 +15,10 @@ def _merge(base, overrides, section="experiment"):
     unknown = overrides.keys() - base.keys()
     if unknown:
         raise ValueError(f"Unknown {section} settings: {sorted(unknown)}")
+    # Apply this at every nesting level, including adversarial.scheduler.
+    for selector, parameters in (("optimizer", "optimizer_kwargs"), ("name", "kwargs")):
+        if selector in base and parameters in base and overrides.get(selector, base[selector]) != base[selector]:
+            base[parameters] = {}
     for key, value in overrides.items():
         if isinstance(base[key], dict):
             if not isinstance(value, dict):
@@ -40,15 +44,7 @@ def load_config(path=None):
     score = overrides.get("score", {})
     if isinstance(score, dict) and score.get("kind", config["score"]["kind"]) != config["score"]["kind"]:
         config["score"] = asdict(SCORE_CONFIGS[score["kind"]]())
-    # Changing algorithms must not inherit parameters belonging to another one.
-    for section, selector, parameters in (("training", "optimizer", "optimizer_kwargs"),
-                                          ("scheduler", "name", "kwargs")):
-        update = overrides.get(section, {})
-        if isinstance(update, dict) and update.get(selector, config[section][selector]) != config[section][selector]:
-            config[section][parameters] = {}
     _merge(config, overrides)
-    if config["stage"] not in ("train", "full"):
-        raise ValueError("stage must be train or full")
     datasets = config["data"]["datasets"]
     if not isinstance(datasets, list) or not datasets:
         raise ValueError("data.datasets must be a nonempty list of cache directories")
