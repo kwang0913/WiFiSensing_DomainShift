@@ -57,7 +57,7 @@ Omitted fields inherit the baseline. Optimizer/scheduler kwargs replace inherite
 
 ## Data and splitting
 
-Select setting_dataset, self_time, or both through `data.datasets`. Other caches use `crossroom/generated_features` or `deep_l/generated_features`. Combined inputs must have matching shapes; see the [data guide](../data/README.md) for labels and formats. Loading uses mmap. Time features are standardized independently per segment/group over all feature rows and time samples, reducing overall offset/scale differences without fitting statistics across splits. STFT magnitudes retain their stored scale; the two branches therefore preserve different amplitude information.
+Select setting_dataset, self_time, or both through `data.datasets`. The default uses `crossroom/generated_features`. Combined inputs must have matching shapes; see the [data guide](../data/README.md) for labels and formats. Loading uses mmap. Time features are standardized independently per segment/group over all feature rows and time samples, reducing overall offset/scale differences without fitting statistics across splits. STFT magnitudes retain their stored scale; the two branches therefore preserve different amplitude information.
 
 The experiment measures conformal prediction under domain shift: target domains are unseen during model fitting, selection, and calibration. For user recognition, an activity can be the domain; for activity recognition, a user can be the domain. This is a known-class problem: the domain field must differ from the task, and test labels must exist in training.
 
@@ -65,11 +65,12 @@ Default configuration:
 
 ```yaml
 data:
-  task: user
+  datasets: [crossroom/generated_features]
+  task: activity
 split:
   mode: domain_holdout
-  domain_key: activity
-  test_domains: [walk]       # Multiple values are supported
+  domain_key: user
+  test_domains: [cong]       # Multiple values are supported
   validation_fraction: 0.10
   calibration_fraction: 0.20
 ```
@@ -78,7 +79,7 @@ split:
 2. Expand source files into `(recording_index, segment_index)` pairs. Within each task label, shuffle and allocate validation/calibration fractions; round down with at least one segment each. The remainder goes to training.
 3. Check that target labels exist in training. Source subsets may share recordings, but never the same segment; no target-domain segment enters them.
 
-`test_fraction` is unused in domain-holdout mode. For activity recognition across users, set `task: activity`, `domain_key: user`, and list held-out users. `mode: random` uses a four-way **recording** split. Only indices are split; full signal arrays stay on disk.
+`test_fraction` is unused in domain-holdout mode. For user recognition across activities, set `task: user`, `domain_key: activity`, and list held-out activities. `mode: random` uses a four-way **recording** split. Only indices are split; full signal arrays stay on disk.
 
 **Why split source segments?** With limited recordings, this retains samples for every task class in training, validation, and calibration. It deliberately permits shared source recordings; distinct segment indices do not imply independent observations. The target domains remain fully held out. This is the current data-availability tradeoff, not a claim of recording-independent validation or calibration.
 
@@ -101,7 +102,7 @@ Combining setting_dataset and self_time does not produce a complete user-by-acti
 
 All convolutions use valid padding to operate on observed input regions. Hidden blocks use ReLU and BatchNorm; both inputs also have BatchNorm. Only the embedding block uses Dropout(0.5), disabled during evaluation/export. BatchNorm uses source-training running statistics at evaluation; the architecture does not enforce domain invariance.
 
-Set `model.stft_frequency_bins` to 32 for setting_dataset/self_time or 64 for crossroom/deep_l; enabled STFT masking must match. Time and STFT windows share a detection peak but cover different durations, so dual-branch gains can also reflect additional context.
+Set `model.stft_frequency_bins` to 32 for setting_dataset/self_time or 64 for crossroom; enabled STFT masking must match. Time and STFT windows share a detection peak but cover different durations, so dual-branch gains can also reflect additional context.
 
 ## Augmentation choices
 

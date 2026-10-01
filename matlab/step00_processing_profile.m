@@ -33,7 +33,7 @@ switch config.dataset
         config.peak_height = 0.1;
         config.skip_keywords = {'keyboard'};
         config.provenance = 'Three-group historical representation; new DAT timestamp alignment is not historical segment replay.';
-    case {'crossroom', 'deep_l'}
+    case 'crossroom'
         config.tx_count = 3;
         config.relative_phase = true;
         config.filter_features = true; % Requested dynamic-feature bandpass
@@ -48,9 +48,6 @@ switch config.dataset
         config.stft_layout = 'flattened_groups';
         config.peak_distance = 3;
         config.peak_height = 0.4; % Post-startup-fix crossroom audit
-        if strcmp(config.dataset, 'deep_l'),
-            config.peak_height = 0.3;
-        end
         config.provenance = '3x3 confirmed in raw packet headers; feature filtering enabled. Relative phase and flattened STFT enabled; timestamp alignment splits long gaps.';
     otherwise
         error('wifi:UnknownDataset', 'Unknown dataset: %s', config.dataset);

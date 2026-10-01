@@ -4,7 +4,7 @@ training_seed: 42            # Initialization, shuffle, Dropout and augmentation
 prepare_npy_cache: false
 
 data:
-  datasets: [setting_dataset, self_time]  # List of datasets to load; each dataset is a subdirectory of python/dataset/
+  datasets: [crossroom/generated_features]  # List of datasets to load; each dataset is a subdirectory of python/dataset/
   filename_template: "{user}_{activity}_{position}[_r{recording}]_time.npy"
   task: activity
 
@@ -18,7 +18,7 @@ split:
 
 model:
   embedding_dim: 32
-  stft_frequency_bins: 32    # 32 for setting_dataset/self_time; 64 for crossroom/deep_l
+  stft_frequency_bins: 64    # 32 for setting_dataset/self_time; 64 for crossroom
 
 training:
   epochs: 100
@@ -85,7 +85,7 @@ augmentation:
     probability: 0.5       # Per-sample chance of selecting a mask; width can still be zero
   stft_mask:
     enabled: true
-    frequency_bins: 32      # 32 for setting_dataset/self_time; 64 for crossroom/deep_l
+    frequency_bins: 64      # 32 for setting_dataset/self_time; 64 for crossroom
     time_max_fraction: 0.05       # Maximum fraction of time frames, not flattened width
     frequency_max_fraction: 0.05  # Maximum fraction of frequency bins
     probability: 0.5             # Applied independently per sample and per axis

@@ -1,6 +1,6 @@
 # MATLAB feature extraction
 
-Decode Intel CSI recordings, align packets, and extract paired time-domain/STFT segments. Source DAT files are available for crossroom and deep_l; dataset labels and array formats are in the [data guide](../data/README.md).
+Decode Intel CSI recordings, align packets, and extract paired time-domain/STFT segments. Source DAT files are available for crossroom; dataset labels and array formats are in the [data guide](../data/README.md).
 
 ## Setup and run
 
@@ -10,13 +10,11 @@ From the repository root:
 
 ```matlab
 addpath(fullfile(pwd, 'matlab'));
-step00_main_raw_seg_extraction_dl   % deep_l
 step00_main_raw_seg_extraction_new  % crossroom
 ```
 
 | Entry point | Input | Output |
 |---|---|---|
-| `step00_main_raw_seg_extraction_dl.m` | `data/deep_l/recordings/` | `data/deep_l/generated_features/` |
 | `step00_main_raw_seg_extraction_new.m` | `data/crossroom/recordings/` | `data/crossroom/generated_features/` |
 | `step00_main_raw_seg_extraction.m` | `data/<dataset>/recordings/<subset>/` | `data/<dataset>/generated_features/<subset>/` |
 
@@ -28,22 +26,22 @@ Keep `read_from_file = true` for timestamp alignment. Existing outputs are skipp
 
 Defaults are defined in [step00_processing_profile.m](step00_processing_profile.m).
 
-| Parameter | self_time / setting_dataset / appleman_0713 | crossroom | deep_l |
-|---|---:|---:|---:|
-| Aligned sample rate | 1000 Hz | 1000 Hz | 1000 Hz |
-| Tx × Rx | 3 × 3 | 3 × 3 | 3 × 3 |
-| Feature bandpass | 0.8–200 Hz | 0.8–200 Hz | 0.8–200 Hz |
-| Total time-domain segment length | 1.2 s / 1200 samples | 4 s / 4000 samples | 4 s / 4000 samples |
-| STFT window length | 250 samples | 125 samples | 125 samples |
-| STFT overlap | 125 samples | 63 samples | 63 samples |
-| NFFT | 1000 | 1000 | 1000 |
-| Retained frequencies | First 32 bins, 0–31 Hz | First 64 bins, 0–63 Hz | First 64 bins, 0–63 Hz |
-| Frames on each side of the peak | 10 | 32 | 32 |
-| Total STFT frames | 21 | 65 | 65 |
-| Normalized peak height | 0.1 | 0.4 | 0.3 |
-| Minimum peak distance | 2.8 s | 3 s | 3 s |
-| Minimum peak prominence | 0.01 | 0.01 | 0.01 |
-| First retained sample index / samples trimmed from end | 4000 / 8000 | 100 / 4000 | 100 / 4000 |
+| Parameter | self_time / setting_dataset / appleman_0713 | crossroom |
+|---|---:|---:|
+| Aligned sample rate | 1000 Hz | 1000 Hz |
+| Tx × Rx | 3 × 3 | 3 × 3 |
+| Feature bandpass | 0.8–200 Hz | 0.8–200 Hz |
+| Total time-domain segment length | 1.2 s / 1200 samples | 4 s / 4000 samples |
+| STFT window length | 250 samples | 125 samples |
+| STFT overlap | 125 samples | 63 samples |
+| NFFT | 1000 | 1000 |
+| Retained frequencies | First 32 bins, 0–31 Hz | First 64 bins, 0–63 Hz |
+| Frames on each side of the peak | 10 | 32 |
+| Total STFT frames | 21 | 65 |
+| Normalized peak height | 0.1 | 0.4 |
+| Minimum peak distance | 2.8 s | 3 s |
+| Minimum peak prominence | 0.01 | 0.01 |
+| First retained sample index / samples trimmed from end | 4000 / 8000 | 100 / 4000 |
 
 Gaps longer than 10 ms split recordings into continuous blocks; segments never cross those boundaries. Four-second segments with a three-second minimum peak distance may overlap.
 

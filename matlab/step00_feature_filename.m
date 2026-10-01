@@ -44,9 +44,7 @@ switch activity
         activity = 'walk';
     case 'sitting'
         activity = 'sit';
-    case 'clappping'
-        activity = 'clapping';
-    case {'wiping', 'sweeping'}
+    case 'wiping'
         activity = 'wipe';
 end
 if isempty(activity)
