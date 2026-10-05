@@ -6,7 +6,25 @@ from sklearn.calibration import CalibratedClassifierCV
 from sklearn.model_selection import StratifiedKFold
 from sklearn.ensemble import HistGradientBoostingClassifier
 
+class SoftmaxScorer:
+    """No fitted intermediate model: input is frozen task softmax probabilities."""
+    input_key = "probabilities"
+
+    def __init__(self, classes):
+        self.classes = classes
+
+    def score(self, probabilities):
+        p = np.asarray(probabilities)
+        if (p.ndim != 2 or p.shape[1] != self.classes or not np.isfinite(p).all()
+                or (p < 0).any() or (p > 1).any()
+                or not np.allclose(p.sum(axis=1), 1, atol=1e-6)):
+            raise ValueError("Expected normalized probabilities [N,K]")
+        return 1.0 - p
+
+
 class KDEScorer:
+    input_key = "embeddings"
+
     def __init__(self, classes, kernel="gaussian", bandwidth=1.0):
         self.classes, self.kernel, self.bandwidth = classes, kernel, bandwidth
 
@@ -23,6 +41,7 @@ class KDEScorer:
         return -np.column_stack([model.score_samples(x) for model in self.models])
 
 class MarginScorer:
+    input_key = "embeddings"
     def __init__(self, estimator):
         self.model = estimator
 
@@ -45,7 +64,9 @@ class MarginScorer:
 
 def build_scorer(config, classes, seed=42):
     """Dispatch by configuration type; no irrelevant KDE settings for SVM/HBGB."""
-    from step00_config.schema import KDEConfig, SVMConfig, HBGBConfig
+    from step00_config.schema import KDEConfig, SVMConfig, HBGBConfig, SoftmaxConfig
+    if isinstance(config, SoftmaxConfig):
+        return SoftmaxScorer(classes)
     if isinstance(config, KDEConfig):
         return KDEScorer(classes, kernel=config.kernel, bandwidth=config.bandwidth)
     if isinstance(config, SVMConfig):

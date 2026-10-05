@@ -52,6 +52,11 @@ class AugmentationConfig:
 
 
 @dataclass
+class SoftmaxConfig:
+    kind: str = field(default="softmax", init=False)
+
+
+@dataclass
 class KDEConfig:
     kernel: str = "gaussian"
     bandwidth: float = 1.0
@@ -78,13 +83,42 @@ class HBGBConfig:
 class CalibrationConfig:
     alpha: float = 0.1
     class_conditional: bool = True
+    weighted_cp: bool = False
+
+
+@dataclass
+class WeightingConfig:
+    reference_domains: list = field(default_factory=list)
+    C: float = 1.0
+    max_iter: int = 1000
+    clip_min: float | None = None
+    clip_max: float | None = None
+
+    def __post_init__(self):
+        if not isinstance(self.reference_domains, list) or any(not isinstance(v, str) for v in self.reference_domains):
+            raise ValueError("weighting.reference_domains must be a list of domain strings")
+        if len(set(self.reference_domains)) != len(self.reference_domains):
+            raise ValueError("weighting.reference_domains must not contain duplicates")
+        if not math.isfinite(self.C) or self.C <= 0:
+            raise ValueError("weighting.C must be finite and positive")
+        if not isinstance(self.max_iter, int) or self.max_iter < 1:
+            raise ValueError("weighting.max_iter must be a positive integer")
+        for value in (self.clip_min, self.clip_max):
+            if value is not None and (not math.isfinite(value) or value <= 0):
+                raise ValueError("Weight clipping bounds must be finite and positive")
+        if self.clip_min is not None and self.clip_max is not None and self.clip_min > self.clip_max:
+            raise ValueError("clip_min must not exceed clip_max")
 
 
 @dataclass
 class DualCNNConfig:
     embedding_dim: int = 32
     stft_frequency_bins: int = 32
-    kind: str = field(default="dual_cnn", init=False)
+    kind: str = "dual_cnn"
+
+    def __post_init__(self):
+        if self.kind not in ("dual_cnn", "dual_resnet", "tcn_stft", "cnn_transformer", "dual_link_graph"):
+            raise ValueError(f"Unknown model kind: {self.kind}")
 
 
 @dataclass

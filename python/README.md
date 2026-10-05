@@ -50,7 +50,7 @@ Edit [baseline.yaml](experiments/baseline.yaml) or supply a partial override. In
 | `adversarial` | Optional conditional domain classifier, reversed gradient weight, and warmup |
 | `contrastive` | Cross-domain same-class positives; independent switch, weight, and temperature |
 | `sampling` | Training class/domain-balanced batches; overrides training batch size when enabled |
-| `score.kind` | `kde`, `svm`, or `hbgb` |
+| `score.kind` | `softmax` (direct 1-p), `kde`, `svm`, or `hbgb` |
 | `calibration.alpha` | Target miscoverage level |
 
 Omitted fields inherit the baseline. Optimizer/scheduler kwargs replace inherited dictionaries. Changing algorithms in an override YAML clears inherited algorithm-specific kwargs; when editing baseline directly, replace the matching kwargs yourself. The YAML is the source of truth for active settings.
@@ -206,3 +206,174 @@ Each experiment writes to `python/runs/<timestamp>/`:
 The embedding-comparison cell jointly projects saved embeddings with t-SNE, colored by task label, domain, and split. Set `viz_dir` to inspect an existing result without retraining; `viz_max_per_split` limits plotting cost. It saves `embedding_tsne.png` and coordinates/labels/sample IDs in `embedding_tsne.npz`. In the same cell, Isomap, Spectral Embedding and metric MDS reuse the same samples/colors and save `embedding_isomap`, `embedding_spectral`, and `embedding_mds` PNG/NPZ files. Adjust `map_neighbors` for the graph methods; heed disconnected-graph warnings. Interpret each method according to its distance/neighborhood objective, not as proof of domain invariance.
 
 The manifest's `recordings` table and `splits` pairs preserve exact subset membership and order; `split_index_columns` defines the pair fields. Summaries report file/segment counts. `best.pt` supports inference with matching model code, not optimizer-state resume. Caches and outputs are excluded from Git.
+
+## Weighted CP using auxiliary domains
+
+The optional post-hoc method estimates an auxiliary/source density ratio on frozen
+embeddings. Auxiliary domains are **different from the unseen test domains**; this
+is a transfer experiment, not calibration using unlabeled test-domain data. Estimated
+weights do not establish nominal coverage on an arbitrary unseen domain.
+
+```yaml
+split:
+  mode: domain_holdout
+  domain_key: user
+  test_domains: [cong]
+calibration:
+  weighted_cp: true             # false uses the existing unweighted RankCalibrator
+  class_conditional: true        # false pools all true-label calibration scores
+weighting:
+  reference_domains: [aux_user_a, aux_user_b]  # Replace with users present in your cache
+  C: 1.0
+  max_iter: 1000
+  clip_min: null
+  clip_max: null
+```
+
+All recordings in `reference_domains` are excluded from encoder/scorer training,
+validation, CP calibration, and test **even when weighted_cp is false**. This preserves
+identical splits for an on/off comparison. Empty reference_domains and weighted_cp=false
+retain the previous splitting and CP behavior. Overlap with test_domains, missing domains,
+and use with random splitting are rejected. Reference activity labels are replaced by -1;
+they do not determine the task vocabulary, splits, fitting, or diagnostics. Filename paths
+still contain their original metadata. No DL top-1 union or SFCP is applied.
+
+Multiple auxiliary domains are merged by natural segment count, without domain balancing.
+A separate StandardScaler and regularized LogisticRegression use clean source-training
+and auxiliary embeddings only. Training embeddings are exported once in original dataset
+order, without the balanced training sampler. Source training sample weights match the
+source-domain/task-class proportions of calibration; this uses source labels and counts,
+never auxiliary labels or calibration embeddings to fit the ratio estimator. Each calibration
+stratum must exist in the source training subset, otherwise fitting fails explicitly.
+Within-stratum distributions are not corrected by this proportion matching.
+
+The ratio includes the source/auxiliary sampling-prior correction. Optional clipping is
+explicit and changes the ratio; bounds are saved. Large weights can reduce effective sample
+size, so inspect `weighting.json` for weight quantiles, overall/per-class calibration ESS,
+source matching ESS, convergence, and auxiliary mixture counts. No test data fits the
+estimator. Test weights are only evaluated after fitting and calibration.
+
+With nonconformity score s (larger is worse), the candidate-label p-value is
+`(w_test + sum(w_i * (s_i >= s_test))) / (w_test + sum(w_i))`.
+The sums use either all calibration samples or only samples of the candidate class.
+Ties are included and prediction sets use `p > alpha`. Unit weights recover ordinary CP.
+Under conditional-label invariance in embedding space, global ratios also work within
+classes because class-prior constants cancel; this assumption is not asserted for the
+unseen test domains. Existing segment dependence limitations also remain.
+
+The CP bundle saves the ratio estimator alongside scorer/calibrator. Weighted runs also
+save `reference_features.npz` (no task labels), `calibration_weights.npz`, `test_weights.npz`,
+and `weighting.json`. `metrics.json` contains overall, per-class and per-test-domain results.
+For paired comparisons reuse the frozen checkpoint and source exports, change only
+`calibration_config.weighted_cp`, and rerun calibration/prediction/evaluation. Keep the
+reference domain reservation unchanged; changing it requires a new data split and training.
+
+Notebook reruns invalidate prior calibration/prediction state before starting. If either
+stage fails, later stages refuse to reuse stale results; rerun the failed stage successfully
+first. Fitted ratio estimators retain their own configuration snapshot.
+
+
+## Architecture and direct softmax CP switches
+
+Set `model.kind` to `dual_cnn` (unchanged default), `dual_resnet`, `tcn_stft`,
+`cnn_transformer`, or `dual_link_graph`. Each new model lives in its matching `step02_models/*.py`;
+`common.py` supplies shared feature mixing, the STFT encoder, and compact fusion.
+All return the same task logits and embeddings, support the existing DA/CL losses,
+and save the model kind in the checkpoint/manifest. `evaluate.ipynb` restores the
+saved architecture; old manifests without a kind default to `dual_cnn`.
+Changing architecture requires retraining; an old checkpoint cannot be reused.
+
+| Model | Temporal inductive bias |
+|---|---|
+| `dual_resnet` | Residual local convolutions, two gradual stride-2 reductions |
+| `tcn_stft` | Noncausal residual convolutions with dilations 1, 2, 4, 8 |
+| `cnn_transformer` | Local CNN, at most 64 ordered tokens, sinusoidal positions, two 4-head attention layers |
+
+The three models in the table above mix the 3×270 feature channels at each time sample before temporal
+processing. They do not treat adjacent feature rows as spatial neighbors. Their
+STFT branch restores the existing frequency-first storage order and uses local
+2D residual convolutions. Both branches retain four pooled positions (STFT: 2×2),
+then use 512→128→embedding→class logits. New models use GroupNorm in convolution
+blocks rather than source-running BatchNorm statistics. This changes normalization
+as well as architecture; any improvement is not an isolated residual/attention
+ablation. None of these architectures guarantees domain invariance.
+
+A minimal override YAML for a new training run:
+
+```yaml
+model:
+  kind: dual_resnet          # or tcn_stft / cnn_transformer / dual_link_graph / dual_cnn
+score:
+  kind: softmax
+calibration:
+  class_conditional: false   # pooled ordinary split CP
+  weighted_cp: false
+```
+
+Run `python run_experiment.py --config /path/to/override.yaml` from this directory.
+The loader supplies other settings from baseline.yaml. When editing baseline.yaml
+itself, replace the entire active score mapping with `score: {kind: softmax}`;
+remove the HBGB/SVM/KDE-only parameters.
+
+`softmax` uses `s(x,y)=1-softmax(logits(x))[y]` from the selected frozen task
+classifier. There is no intermediate fitting step. The same score is applied to
+validation, calibration, and test probabilities; ordinary finite-sample ranks
+and the existing strict p-value threshold are unchanged. `class_conditional` and
+`weighted_cp` remain independent options. Saved scorers expose `input_key`:
+pass probabilities for softmax and embeddings for the other scorers.
+
+For an existing run, use the score/calibration portion of this YAML as
+`evaluation_config_path` in `evaluate.ipynb`; no NN retraining is needed to change
+only the score. Calibration/test labels never fit the score. Better representations
+may reduce score shift, but alone do not prove exchangeability or target coverage.
+
+## Further invariant-representation experiments (not implemented)
+
+- Source-only class-conditional mean/covariance alignment: penalize statistical
+  differences between training users within the same activity. This is a proposed
+  adaptation of [CORAL](https://arxiv.org/abs/1607.01719), whose original formulation
+  uses source and target data. Do not import target samples into this DG experiment.
+  With small per-class/domain batches, covariance estimates need pooling/shrinkage.
+- [DICA](https://arxiv.org/abs/1301.2115): kernel-based domain-invariant component
+  analysis preserves input-output relationships while reducing domain differences;
+  a statistical alternative to adversarial representation learning.
+- [MixStyle](https://arxiv.org/abs/2104.02008): mix training-instance feature statistics
+  to augment source-domain styles. Applying it to CSI is a hypothesis: statistics
+  can also encode activity, so first test same-activity, different-user mixing.
+
+Compare each separately on fixed splits against CE and the existing DA/CL setup.
+Fit transforms and statistics on training data only, select with source validation,
+and report unseen-user classification plus CP coverage/set size separately.
+
+
+### Dual Link-Graph model
+
+Select `model.kind: dual_link_graph` in your experiment YAML. Existing real-valued
+`[B,3,270,T]` time and flattened STFT inputs are unchanged. Use the correct
+`stft_frequency_bins` for your files (64 for the current crossroom profile).
+No feature regeneration or change to the softmax CP scorer is required.
+
+The MATLAB row order must be Tx, then Rx/pair, then 30 subcarriers. Amplitude
+provides nine Tx–Rx nodes; relative phase and conjugate-product magnitude provide
+nine edges, ordered 1->2, 1->3, 2->3 within each Tx. These are different physical
+objects and are encoded separately. Time link encoders use shared local residual
+convolutions. STFT encoders share small time-frequency convolutions across
+subcarriers, then convolve along the subcarrier axis. Both retain eight temporal
+positions and 64 channels per node/edge.
+
+Each branch applies two edge-aware message-passing layers independently within
+each Tx, with different source/target message functions. Ordered node/edge
+concatenation maps 384->128 per Tx; ordered Tx concatenation maps 384->128.
+A temporal residual block and pooling produce 128 values per branch. Concatenated
+branches map 256->128->embedding, followed by the existing classifier. Time/STFT
+positions are pooled independently, not assumed to be temporally aligned.
+
+This model retains spatial structure longer than the early global compression
+in the other architectures. It does not guarantee domain invariance. Per-link
+encoding also uses more activation memory; lower training batch size if needed.
+
+The time branch receives signed relative phase. Its magnitude STFT does not
+preserve phase sign; ordered graph endpoints preserve pair identity, not recover
+phase discarded by preprocessing. GroupNorm operates within each encoded link
+(and within each subcarrier at the first STFT stage), so absolute link-energy
+information may be attenuated. This is an architectural tradeoff to validate.

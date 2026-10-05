@@ -4,7 +4,7 @@ training_seed: 42            # Initialization, shuffle, Dropout and augmentation
 prepare_npy_cache: false
 
 data:
-  datasets: [crossroom/generated_features]  # List of datasets to load; each dataset is a subdirectory of python/dataset/
+  datasets: [crossroom]  # List of datasets to load; each dataset is a subdirectory of python/dataset/
   filename_template: "{user}_{activity}_{position}[_r{recording}]_time.npy"
   task: activity
 
@@ -17,60 +17,9 @@ split:
   test_fraction: 0.20       # Used only in random mode; other fractions use source segments in holdout mode
 
 model:
+  kind: dual_link_graph           # dual_cnn / dual_resnet / tcn_stft / cnn_transformer / dual_link_graph
   embedding_dim: 32
   stft_frequency_bins: 64    # 32 for setting_dataset/self_time; 64 for crossroom
-
-training:
-  epochs: 100
-  batch_size: 128
-  optimizer: sgd            # adamw / adam / sgd / rmsprop
-  learning_rate: 0.001
-  weight_decay: 0.0001
-  # Select ONE kwargs mapping matching the optimizer ({} uses PyTorch defaults).
-  # sgd:     {momentum: 0.9, dampening: 0.0, nesterov: true}
-  # adamw:   {betas: [0.9, 0.999], eps: 1.0e-8, amsgrad: false}
-  # adam:    {betas: [0.9, 0.999], eps: 1.0e-8, amsgrad: false}
-  # rmsprop: {alpha: 0.99, eps: 1.0e-8, momentum: 0.9, centered: false}
-  # Nesterov requires momentum > 0 and dampening = 0.
-  # Keep learning_rate and weight_decay above; do not repeat lr/weight_decay here.
-  # When editing this file, replace kwargs too when changing optimizer.
-  optimizer_kwargs: {momentum: 0.9, nesterov: true}
-  patience: null            # null: all epochs; e.g. 10: early stopping on validation loss
-  min_delta: 0.0            # Minimum loss improvement to reset early-stopping patience
-
-contrastive:
-  enabled: true
-  weight: 0.5               # Added to task CE; normalized embedding similarities
-  temperature: 0.05         # Positive: same task label, different domain
-
-sampling:
-  enabled: true            # Train only; false restores shuffled training.batch_size
-  classes_per_batch: 6     # Capped at the number of available task classes
-  domains_per_class: 3     # Available domains first; repeat slots if fewer exist
-  samples_per_domain: 4    # Effective batch size = classes * domain slots * samples
-
-adversarial:
-  enabled: true
-  conditional: true        # Domain head also receives the true task label
-  domain_key: user       # Shared domain field for adversarial, contrastive and sampling; differs from data.task
-  max_weight: 0.2            # Maximum reversed gradient multiplier on the encoder
-  warmup_epochs: 10          # Linear ramp from zero; 0 uses max_weight immediately
-  hidden_dim: 128
-  steps_per_batch: 5         # Domain-only updates on detached embeddings, then ONE encoder update
-  optimizer: sgd            # Same options/kwargs as training.optimizer; independent optimizer
-  learning_rate: 0.001
-  weight_decay: 0.0001
-  optimizer_kwargs: {momentum: 0.9, nesterov: true}
-  scheduler:
-    name: plateau              # none / cosine / plateau; independent of the encoder scheduler
-    kwargs: {factor: 0.5, patience: 5, min_lr: 1.0e-6}              # plateau monitors clean validation_domain_loss
-
-scheduler:
-  name: cosine              # none / cosine / plateau; updated once per epoch
-  # none:    {}
-  # cosine:  {eta_min: 1.0e-6}  # T_max defaults to training.epochs
-  # plateau: {factor: 0.5, patience: 5, min_lr: 1.0e-6}  # Monitors validation loss
-  kwargs: {eta_min: 0.000001}
 
 augmentation:
   enabled: true            # Master switch; individual switches below select the combination
@@ -90,6 +39,58 @@ augmentation:
     frequency_max_fraction: 0.05  # Maximum fraction of frequency bins
     probability: 0.5             # Applied independently per sample and per axis
 
+training:
+  epochs: 100
+  batch_size: 128
+  optimizer: sgd            # adamw / adam / sgd / rmsprop
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  # Select ONE kwargs mapping matching the optimizer ({} uses PyTorch defaults).
+  # sgd:     {momentum: 0.9, dampening: 0.0, nesterov: true}
+  # adamw:   {betas: [0.9, 0.999], eps: 1.0e-8, amsgrad: false}
+  # adam:    {betas: [0.9, 0.999], eps: 1.0e-8, amsgrad: false}
+  # rmsprop: {alpha: 0.99, eps: 1.0e-8, momentum: 0.9, centered: false}
+  # Nesterov requires momentum > 0 and dampening = 0.
+  # Keep learning_rate and weight_decay above; do not repeat lr/weight_decay here.
+  # When editing this file, replace kwargs too when changing optimizer.
+  optimizer_kwargs: {momentum: 0.9, nesterov: true}
+  patience: null            # null: all epochs; e.g. 10: early stopping on validation loss
+  min_delta: 0.0            # Minimum loss improvement to reset early-stopping patience
+
+scheduler:
+  name: cosine              # none / cosine / plateau; updated once per epoch
+  # none:    {}
+  # cosine:  {eta_min: 1.0e-6}  # T_max defaults to training.epochs
+  # plateau: {factor: 0.5, patience: 5, min_lr: 1.0e-6}  # Monitors validation loss
+  kwargs: {eta_min: 0.000001}
+
+contrastive:
+  enabled: true
+  weight: 0.5               # Added to task CE; normalized embedding similarities
+  temperature: 0.05         # Positive: same task label, different domain
+
+sampling:
+  enabled: true            # Train only; false restores shuffled training.batch_size
+  classes_per_batch: 5     # Capped at the number of available task classes
+  domains_per_class: 4     # Available domains first; repeat slots if fewer exist
+  samples_per_domain: 3    # Effective batch size = classes * domain slots * samples
+
+adversarial:
+  enabled: true
+  conditional: true        # Domain head also receives the true task label
+  domain_key: user       # Shared domain field for adversarial, contrastive and sampling; differs from data.task
+  max_weight: 0.2            # Maximum reversed gradient multiplier on the encoder
+  warmup_epochs: 10          # Linear ramp from zero; 0 uses max_weight immediately
+  hidden_dim: 128
+  steps_per_batch: 5         # Domain-only updates on detached embeddings, then ONE encoder update
+  optimizer: sgd            # Same options/kwargs as training.optimizer; independent optimizer
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  optimizer_kwargs: {momentum: 0.9, nesterov: true}
+  scheduler:
+    name: cosine              # none / cosine / plateau; independent of the encoder scheduler
+    kwargs: {eta_min: 0.00001}              # plateau monitors clean validation_domain_loss
+
 monitoring:
   enabled: true
   project: wifi-conformal
@@ -100,6 +101,9 @@ monitoring:
   parameter_histograms: true
   activation_gradients: true
   layers: null               # e.g. ["time_encoder.1", "fusion.*", "embedding"]
+
+score:
+  kind: softmax
 
 # score:
 #   kind: kde                  # kde, svm, hbgb
@@ -112,13 +116,21 @@ monitoring:
 #   C: 1.0
 #   gamma: scale         # linear 时不使用
 
-score:
-  kind: hbgb
-  max_iter: 100
-  learning_rate: 0.1
-  max_leaf_nodes: 7
+# score:
+#   kind: hbgb
+#   max_iter: 100
+#   learning_rate: 0.1
+#   max_leaf_nodes: 7
 
 calibration:
-  alpha: 0.1
-  class_conditional: true
+  # alpha: 0.1
+  class_conditional: false # true: class-conditional; false: pooled
+  weighted_cp: false        # true: auxiliary-domain weighting; false: existing rank CP
+
+weighting:
+  reference_domains: []     # Same domain_key as split; disjoint from test_domains. Reserved even when CP is unweighted.
+  C: 1.0                   # Inverse regularization strength of the independent logistic classifier
+  max_iter: 1000
+  clip_min: null            # Optional explicit density-ratio clipping; changes the estimated ratio
+  clip_max: null
 alpha_grid: [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.10]
