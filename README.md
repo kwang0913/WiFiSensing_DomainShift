@@ -19,6 +19,121 @@ The earlier [SenSys framework](https://www.winlab.rutgers.edu/~yychen/daisylab/p
 - Implement randomized adaptive prediction sets (APS) from [Romano, Sesia, and Candès](https://arxiv.org/abs/2006.02544), using cumulative class probabilities to adapt set size to each input.
 - Evaluate coverage against the nominal target alongside set size and neural-network accuracy, aiming for compact sets with coverage close to the target.
 
+## Network architecture
+
+The task model uses [CNNTransformer](python/step02_models/cnn_transformer.py) with separate time and STFT encoders, followed by feature fusion and classification.
+
+```mermaid
+flowchart LR
+    T["Time CSI"] --> TS["Time stem"]
+    TS --> TT["Time tokens<br/>+ 1D positions"]
+    TT --> TA["Transformer<br/>block × 2"]
+    TA --> TP["Pool + flatten<br/>256"]
+    S["STFT CSI"] --> SS["STFT fusion"]
+    SS --> ST["Patch tokens<br/>+ 2D positions"]
+    ST --> SA["Transformer<br/>block × 2"]
+    SA --> SP["Pool + flatten<br/>256"]
+    TP --> C["Concat<br/>512"]
+    SP --> C
+    C --> F["Fusion<br/>512 → 128"]
+    F --> Z["Embedding<br/>128 → 32"]
+    Z --> H["Classifier<br/>32 → classes"]
+```
+
+<details>
+<summary>Block definitions</summary>
+
+**Conv block**
+
+```mermaid
+flowchart LR
+    subgraph BLOCK["Conv block"]
+        direction LR
+        C["Convolution"] --> N["GroupNorm<br/>8 groups"]
+        N --> G["GELU"]
+    end
+    style BLOCK fill:#eef5ff,stroke:#64748b,color:#1e293b
+```
+
+**Time stem and tokens**
+
+```mermaid
+flowchart LR
+    subgraph BLOCK["Time stem and tokens"]
+        direction LR
+        X["Flatten<br/>3 × 270 → 810 channels"] --> C1["Conv block 1D<br/>810 → 64 · kernel 1"]
+        C1 --> C2["Conv block 1D<br/>64 → 64 · kernel 7<br/>stride 2 · padding 3"]
+        C2 --> P["Adaptive average pool<br/>at most 64 tokens"]
+        P --> PE["Add 1D<br/>sinusoidal positions"]
+    end
+    style BLOCK fill:#eef5ff,stroke:#64748b,color:#1e293b
+```
+
+**STFT fusion and patch tokens**
+
+```mermaid
+flowchart LR
+    subgraph BLOCK["STFT fusion and patch tokens"]
+        direction LR
+        C["Conv2D<br/>3 → 32<br/>kernel 270 × 1"] --> R["Restore<br/>frequency × time grid"]
+        R --> N["GroupNorm: 8 groups<br/>GELU"]
+        N --> PAD["Pad to whole<br/>8 × 9 patches"]
+        PAD --> PATCH["Conv2D: 32 → 64<br/>kernel = stride = 8 × 9"]
+        PATCH --> T["Flatten patch grid<br/>Add 2D sinusoidal positions"]
+    end
+    style BLOCK fill:#eef5ff,stroke:#64748b,color:#1e293b
+```
+
+Patch dimensions are frequency bins × time frames.
+
+**Transformer block**
+
+```mermaid
+flowchart LR
+    subgraph BLOCK["Transformer block"]
+        direction LR
+        X["Input<br/>width 64"] --> A["Self-attention<br/>4 heads"]
+        A --> D1["Dropout"]
+        D1 --> ADD1["Add"]
+        ADD1 --> N1["LayerNorm"]
+        X --> ADD1
+        N1 --> F["FFN<br/>Linear 64 → 128<br/>GELU → Dropout<br/>Linear 128 → 64"]
+        F --> D2["Dropout"]
+        D2 --> ADD2["Add"]
+        ADD2 --> N2["LayerNorm"]
+        N1 --> ADD2
+    end
+    style BLOCK fill:#eef5ff,stroke:#64748b,color:#1e293b
+```
+
+Dropout is 0.1, including attention-weight dropout. Each branch stacks two blocks.
+
+**Pooling and prediction head**
+
+```mermaid
+flowchart LR
+    subgraph BLOCK["Pooling and prediction head"]
+        direction LR
+        T["Transformer output<br/>Time tokens"] --> TP["Adaptive average pool<br/>4 positions"]
+        TP --> TF["Flatten: 256"]
+        S["Transformer output<br/>STFT tokens"] --> R["Restore patch grid"]
+        R --> SP["Adaptive average pool<br/>2 × 2"]
+        SP --> SF["Flatten: 256"]
+        TF --> C["Concat: 512"]
+        SF --> C
+        C --> F["Linear 512 → 128<br/>GELU"]
+        F --> E["Linear 128 → 32<br/>Embedding"]
+        E --> H["Linear 32 → classes"]
+        H --> P["Softmax probabilities"]
+        P -.-> SCORE["CP / APS scoring"]
+    end
+    style BLOCK fill:#eef5ff,stroke:#64748b,color:#1e293b
+```
+
+</details>
+
+The two Transformer stacks have independent weights. Adversarial and contrastive objectives act on the embedding during training. With 5 classes and embedding width 32, the task model has 458,277 parameters, excluding auxiliary heads and the optional background branch.
+
 ## Results
 
 ### Training loss and accuracy
