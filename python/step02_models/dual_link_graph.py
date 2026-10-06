@@ -8,21 +8,18 @@ is MATLAB frequency-first: frame * bins + frequency.
 """
 import torch
 from torch import nn
-from .common import PairedClassifier, Residual
-
-
-def block(cin, cout, kernel, stride, padding):
-    return nn.Sequential(nn.Conv2d(cin, cout, kernel, stride, padding),
-                         nn.GroupNorm(8, cout), nn.GELU())
+from .common import PairedModel, Residual, conv_block
 
 
 class TimeLinkEncoder(nn.Module):
     def __init__(self, inputs):
         super().__init__()
         self.layers = nn.Sequential(
-            block(inputs, 32, (3, 7), (1, 4), (1, 3)),
-            block(32, 64, (3, 5), (2, 4), (1, 2)),
-            Residual(64, dimensions=2), nn.AdaptiveAvgPool2d((1, 8)))
+            conv_block(inputs, 32, (3, 7), (1, 4), (1, 3)),
+            conv_block(32, 64, (3, 5), (2, 4), (1, 2)),
+            Residual(64, dimensions=2),
+            nn.AdaptiveAvgPool2d((1, 8))
+            )
 
     def forward(self, x):
         return self.layers(x).squeeze(-2)
@@ -34,11 +31,13 @@ class STFTLinkEncoder(nn.Module):
         self.bins = bins
         # Shared over subcarriers and links; small channels control activation memory.
         self.spectral = nn.Sequential(
-            block(inputs, 8, 3, 2, 1), block(8, 16, 3, 2, 1),
+            conv_block(inputs, 8, 3, 2, 1),
+            conv_block(8, 16, 3, 2, 1),
             nn.AdaptiveAvgPool2d((1, 8)))
         self.subcarriers = nn.Sequential(
-            block(16, 64, (3, 1), (2, 1), (1, 0)),
-            Residual(64, dimensions=2), nn.AdaptiveAvgPool2d((1, 8)))
+            conv_block(16, 64, (3, 1), (2, 1), (1, 0)),
+            Residual(64, dimensions=2),
+            nn.AdaptiveAvgPool2d((1, 8)))
 
     def forward(self, x):
         n, c, k, width = x.shape
@@ -51,7 +50,8 @@ class STFTLinkEncoder(nn.Module):
 
 
 def mlp(inputs, outputs):
-    return nn.Sequential(nn.Linear(inputs, outputs), nn.GELU(),
+    return nn.Sequential(nn.Linear(inputs, outputs),
+                         nn.GELU(),
                          nn.Linear(outputs, outputs))
 
 
@@ -115,9 +115,11 @@ class LinkBranch(nn.Module):
         return self.temporal(fused.transpose(1, 2))
 
 
-class DualLinkGraph(PairedClassifier):
+class DualLinkGraph(PairedModel):
     def __init__(self, classes, embedding_dim=32, stft_frequency_bins=32):
         super().__init__(classes, embedding_dim, stft_frequency_bins)
         self.time_encoder = LinkBranch()
         self.stft_encoder = LinkBranch(stft_frequency_bins)
         self.fusion = nn.Sequential(nn.Linear(256, 128), nn.GELU())
+        self.embedding = nn.Linear(128, embedding_dim)
+        self.classifier = nn.Linear(embedding_dim, classes)

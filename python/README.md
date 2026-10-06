@@ -28,7 +28,7 @@ For Amarel job arrays and environment setup, see the [Slurm guide](slurm/README.
 | `step02_models/` | CNN architecture and model construction |
 | `step03_training/` | Augmentation, balanced sampling, contrastive loss, scheduling, and monitoring |
 | `step04_scores/` | KDE and classifier-based nonconformity scores |
-| `step05_calibration/` | Class-conditional or pooled rank calibration |
+| `step05_calibration/` | Pooled rank calibration |
 | `step06_prediction/` | Prediction-set construction |
 | `step07_evaluation/` | Coverage, set size, and classification metrics |
 
@@ -45,10 +45,10 @@ Edit [baseline.yaml](experiments/baseline.yaml) or supply a partial override. In
 | `split_seed` / `training_seed` | Data splits/scorer folds versus initialization, shuffle, and augmentation |
 | `training` | Epochs, batch size, LR, weight decay, optimizer; `patience: null` disables early stopping |
 | `training.optimizer_kwargs` | Extra arguments for `adamw`, `adam`, `sgd`, or `rmsprop` |
-| `scheduler` | `none`, `cosine`, or validation-loss `plateau` |
+| `training.scheduler` | `none`, `cosine`, or validation-loss `plateau` |
 | `augmentation` | Master switch plus independent `time_noise`, `time_mask`, and `stft_mask` switches |
-| `adversarial` | Optional conditional domain classifier, reversed gradient weight, and warmup |
-| `contrastive` | Cross-domain same-class positives; independent switch, weight, and temperature |
+| `encoder_task.adversarial` | Optional conditional domain classifier, reversed gradient weight, and warmup |
+| `encoder_task.contrastive` | Cross-domain same-class positives; independent switch, weight, and temperature |
 | `sampling` | Training class/domain-balanced batches; overrides training batch size when enabled |
 | `score.kind` | `softmax` (direct 1-p), `kde`, `svm`, or `hbgb` |
 | `calibration.alpha` | Target miscoverage level |
@@ -67,9 +67,9 @@ Default configuration:
 data:
   datasets: [crossroom/generated_features]
   task: activity
+  domain_key: user
 split:
   mode: domain_holdout
-  domain_key: user
   test_domains: [cong]       # Multiple values are supported
   validation_fraction: 0.10
   calibration_fraction: 0.20
@@ -79,7 +79,7 @@ split:
 2. Expand source files into `(recording_index, segment_index)` pairs. Within each task label, shuffle and allocate validation/calibration fractions; round down with at least one segment each. The remainder goes to training.
 3. Check that target labels exist in training. Source subsets may share recordings, but never the same segment; no target-domain segment enters them.
 
-`test_fraction` is unused in domain-holdout mode. For user recognition across activities, set `task: user`, `domain_key: activity`, and list held-out activities. `mode: random` uses a four-way **recording** split. Only indices are split; full signal arrays stay on disk.
+`test_fraction` is unused in domain-holdout mode. For user recognition across activities, set `data.task: user`, `data.domain_key: activity`, and list held-out activities. `mode: random` uses a four-way **recording** split. Only indices are split; full signal arrays stay on disk.
 
 **Why split source segments?** With limited recordings, this retains samples for every task class in training, validation, and calibration. It deliberately permits shared source recordings; distinct segment indices do not imply independent observations. The target domains remain fully held out. This is the current data-availability tradeoff, not a claim of recording-independent validation or calibration.
 
@@ -93,14 +93,14 @@ Combining setting_dataset and self_time does not produce a complete user-by-acti
 
 | Branch | First convolution: channels; kernel; stride | Second convolution: channels; kernel; stride | Adaptive pooling |
 |---|---|---|---|
-| Time | 3 → 128; `(270,24)`; `(1,24)` | 128 → 256; `(1,4)`; `(1,2)` | `(1,4)` |
-| STFT | 3 → 128; `(270,1)`; `(1,1)` | 128 → 256; `(3,3)`; `(1,1)` on frequency/time | `(2,2)` |
+| Time | 3 → 32; `(270,24)`; `(1,24)` | 32 → 64; `(1,4)`; `(1,2)` | `(1,4)` |
+| STFT | 3 → 32; `(270,1)`; `(1,1)` | 32 → 64; `(3,3)`; `(1,1)` on frequency/time | `(2,2)` |
 
 - **Time:** the first layer mixes all feature rows over 24 samples (24 ms at 1000 Hz), reducing the sequence length early. The second learns local temporal patterns. This convolution is equivalent to a temporal Conv1d over 810 input channels after reshaping; using Conv2d keeps the input layout explicit. Kernel widths and strides are baseline choices, not established optima; early downsampling trades temporal detail for computation.
-- **STFT:** `(270,1)` mixes features independently at each time-frequency point. The stored frequency-first sequence is then reshaped to `[B,128,frames,bins]` and transposed to `[B,128,bins,frames]`. A `(3,3)` kernel learns local spectral/temporal patterns without treating a frame's last frequency and the next frame's first frequency as neighbors.
-- **Pooling and fusion:** time pooling preserves four coarse temporal positions; STFT pooling preserves a coarse `2×2` frequency/time grid. Each produces 1024 values followed by a 1024 → 1024 dense block. Concatenation feeds `2048 → 1024 → 512 → 128 → embedding → class logits`; the default embedding has 32 dimensions for downstream scoring.
+- **STFT:** `(270,1)` mixes features independently at each time-frequency point. The stored frequency-first sequence is then reshaped to `[B,32,frames,bins]` and transposed to `[B,32,bins,frames]`. A `(3,3)` kernel learns local spectral/temporal patterns without treating a frame's last frequency and the next frame's first frequency as neighbors.
+- **Pooling and fusion:** time pooling preserves four coarse temporal positions; STFT pooling preserves a coarse `2×2` frequency/time grid. Each produces 256 values directly, with no branch dense block. Concatenation feeds `512 → 128 → embedding → class logits`; the default embedding has 32 dimensions for downstream scoring.
 
-All convolutions use valid padding to operate on observed input regions. Hidden blocks use ReLU and BatchNorm; both inputs also have BatchNorm. Only the embedding block uses Dropout(0.5), disabled during evaluation/export. BatchNorm uses source-training running statistics at evaluation; the architecture does not enforce domain invariance.
+DualCNN convolutions use valid padding. Its branch hidden blocks use GroupNorm and GELU; neither branch normalizes the raw input. The compact shared embedding is linear, without BatchNorm or Dropout. GroupNorm uses per-sample statistics in both training and evaluation; it does not guarantee domain invariance.
 
 Set `model.stft_frequency_bins` to 32 for setting_dataset/self_time or 64 for crossroom; enabled STFT masking must match. Time and STFT windows share a detection peak but cover different durations, so dual-branch gains can also reflect additional context.
 
@@ -122,8 +122,8 @@ Fresh randomness is drawn on each training batch from an RNG seeded once with `t
 
 ## Domain-adversarial training
 
-Set `adversarial.enabled: true` in baseline or an override YAML; `false` uses the
-ordinary task classifier unless contrastive learning is enabled.
+Set `encoder_task.adversarial.enabled: true` in baseline or an override YAML; `false` uses the
+task classifier without task-domain reversal; other encoder objectives remain independent.
 
 A small domain classifier branches off the shared embedding. It learns the chosen
 `domain_key` (activity for user recognition), while gradient reversal makes the encoder
@@ -131,7 +131,7 @@ suppress that information and retain task discrimination. Only training segments
 optimization targets; source validation labels provide diagnostics. Held-out domains,
 calibration and test never enter this objective.
 At least two training domains are required, distinct from the prediction task.
-For activity recognition across users, also change `adversarial.domain_key` to `user`.
+For activity recognition across users, also change `data.domain_key` to `user`.
 
 `max_weight` scales the reversed encoder gradient, not the domain classifier's own
 cross-entropy gradient. It ramps from zero over `warmup_epochs` (0 means immediate);
@@ -142,8 +142,8 @@ cues. Low domain accuracy alone is not proof of invariance or unseen-domain perf
 The domain head has independent `optimizer`, `learning_rate`, `weight_decay`,
 `optimizer_kwargs`, and `scheduler` settings. Each batch performs `steps_per_batch`
 head updates on the same detached embedding, followed by one encoder/task update with
-the head fixed. The encoder runs once, so extra head steps do not repeat BatchNorm updates.
-The baseline uses five head steps and a fixed domain LR; these are experimental choices.
+the head fixed. The encoder runs once; extra head steps reuse detached embeddings.
+The baseline uses five head steps and a cosine domain scheduler; these are experimental choices.
 
 History and W&B record train/clean-validation domain loss and accuracy, domain LR, and
 mean reversal weight. Training domain metrics are measured after the head updates on
@@ -153,20 +153,19 @@ count. Domain `plateau` scheduling monitors this validation loss and skips epoch
 no known domains. Main-model scheduling and checkpoint selection still use task loss.
 
 The checkpoint includes the domain head, vocabulary and configuration. Rebuild with
-`domain_classes=len(domain_names)`, `domain_hidden_dim=adversarial.hidden_dim`, and
-`domain_conditional=adversarial.conditional` to load it; inference and KDE/CP still use the usual task logits and embeddings.
+`domain_classes=len(domain_names)`, `domain_hidden_dim=encoder_task.adversarial.hidden_dim`, and
+`domain_conditional=encoder_task.adversarial.conditional` to load it; inference and KDE/CP still use the usual task logits and embeddings.
 
 ## Cross-domain representation learning
 
-`contrastive.enabled`, `adversarial.enabled`, and `sampling.enabled` are independent.
-All three use `adversarial.domain_key`, even when the adversarial loss is disabled.
+`encoder_task.contrastive.enabled`, `encoder_task.adversarial.enabled`, and `sampling.enabled` are independent.
+All three use `data.domain_key`, even when the adversarial loss is disabled.
 For user recognition this is activity; for activity recognition set it to user.
 
-With `adversarial.conditional: true`, the domain head receives the embedding and the
+With `encoder_task.adversarial.conditional: true`, the domain head receives the embedding and the
 true task-label one-hot vector. Only the embedding gradient is reversed. This aims to
 suppress domain information within each task class; task labels never enter the encoder
-or task classifier. The head-only diagnostic also supplies task labels and skips when
-validation contains no known domains. Its reference accuracy depends on domain frequencies
+or task classifier. Domain-head reference accuracy depends on domain frequencies
 within each class, not necessarily uniform chance.
 
 The contrastive loss uses L2-normalized embeddings: positives share the task label but
@@ -174,13 +173,13 @@ have different domains; negatives have different task labels. Same-class/same-do
 pairs are excluded. `temperature` scales cosine similarities, and `weight` scales the
 loss added to task CE. There is no projection head; training retains the existing
 embedding Dropout, and export uses eval mode with Dropout disabled. The encoder receives
-task CE + weighted contrastive loss - weighted domain CE; the domain head minimizes its
+weighted task CE + weighted contrastive loss - weighted domain CE; the domain head minimizes its
 own CE. GRL applies the domain weight once. Checkpoint selection still uses task validation CE.
 
 Balanced sampling selects task classes, domains within each class, and segments within
 each group. It prefers distinct recordings where available. The batch size is
 `min(classes_per_batch, available_classes) * domains_per_class * samples_per_domain`
-(72 in baseline); `training.batch_size` still controls evaluation. Missing domains use
+(10 in baseline); `training.batch_size` still controls evaluation. Missing domains use
 repeated slots from available domains. Small groups repeat segments only after exhausting
 the group, and classes with a single domain remain in training but have no contrastive
 positives. Training fails if no class has cross-domain positives at all.
@@ -207,77 +206,63 @@ The embedding-comparison cell jointly projects saved embeddings with t-SNE, colo
 
 The manifest's `recordings` table and `splits` pairs preserve exact subset membership and order; `split_index_columns` defines the pair fields. Summaries report file/segment counts. `best.pt` supports inference with matching model code, not optimizer-state resume. Caches and outputs are excluded from Git.
 
-## Weighted CP using auxiliary domains
+## Weighted CP using unlabeled target inputs
 
-The optional post-hoc method estimates an auxiliary/source density ratio on frozen
-embeddings. Auxiliary domains are **different from the unseen test domains**; this
-is a transfer experiment, not calibration using unlabeled test-domain data. Estimated
-weights do not establish nominal coverage on an arbitrary unseen domain.
+Enable `calibration.weighted_cp` in baseline to estimate target/source density ratios
+on frozen clean task or background features. Weight estimation always uses the current
+test inputs, without their task labels. There is no separate domain reservation or
+reference selector. Turning weighting on/off does not change the four data splits.
 
-```yaml
-split:
-  mode: domain_holdout
-  domain_key: user
-  test_domains: [cong]
-calibration:
-  weighted_cp: true             # false uses the existing unweighted RankCalibrator
-  class_conditional: true        # false pools all true-label calibration scores
-weighting:
-  reference_domains: [aux_user_a, aux_user_b]  # Replace with users present in your cache
-  C: 1.0
-  max_iter: 1000
-  clip_min: null
-  clip_max: null
-```
+`weighting.features` selects `task` or `background`; the latter requires a trained
+background branch. `weighting.method` selects `density_ratio` (source/target logistic
+classifier) or `domain_mixture` (target mixture proportions over source domains).
+Mixture mode needs at least two supported source domains.
 
-All recordings in `reference_domains` are excluded from encoder/scorer training,
-validation, CP calibration, and test **even when weighted_cp is false**. This preserves
-identical splits for an on/off comparison. Empty reference_domains and weighted_cp=false
-retain the previous splitting and CP behavior. Overlap with test_domains, missing domains,
-and use with random splitting are rejected. Reference activity labels are replaced by -1;
-they do not determine the task vocabulary, splits, fitting, or diagnostics. Filename paths
-still contain their original metadata. No DL top-1 union or SFCP is applied.
+Source training sample weights match calibration domain/class proportions. This uses
+source/calibration labels and counts, not target labels or calibration features to fit
+the ratio estimator. Every calibration stratum must occur in training. This matching
+does not correct within-stratum distribution shift. Logistic ratios include the
+source/target sample-prior correction. Optional clipping changes the estimated ratio.
 
-Multiple auxiliary domains are merged by natural segment count, without domain balancing.
-A separate StandardScaler and regularized LogisticRegression use clean source-training
-and auxiliary embeddings only. Training embeddings are exported once in original dataset
-order, without the balanced training sampler. Source training sample weights match the
-source-domain/task-class proportions of calibration; this uses source labels and counts,
-never auxiliary labels or calibration embeddings to fit the ratio estimator. Each calibration
-stratum must exist in the source training subset, otherwise fitting fails explicitly.
-Within-stratum distributions are not corrected by this proportion matching.
-
-The ratio includes the source/auxiliary sampling-prior correction. Optional clipping is
-explicit and changes the ratio; bounds are saved. Large weights can reduce effective sample
-size, so inspect `weighting.json` for weight quantiles, overall/per-class calibration ESS,
-source matching ESS, convergence, and auxiliary mixture counts. No test data fits the
-estimator. Test weights are only evaluated after fitting and calibration.
-
-With nonconformity score s (larger is worse), the candidate-label p-value is
+With nonconformity score s (larger is worse), candidate-label p-values are
 `(w_test + sum(w_i * (s_i >= s_test))) / (w_test + sum(w_i))`.
-The sums use either all calibration samples or only samples of the candidate class.
-Ties are included and prediction sets use `p > alpha`. Unit weights recover ordinary CP.
-Under conditional-label invariance in embedding space, global ratios also work within
-classes because class-prior constants cancel; this assumption is not asserted for the
-unseen test domains. Existing segment dependence limitations also remain.
+Sums use all calibration samples. Ties are included, sets use `p > alpha`, and unit weights recover
+ordinary CP. Reusing target inputs for estimated weights and prediction is empirical
+transductive adaptation; it does not establish exact target coverage.
 
-The CP bundle saves the ratio estimator alongside scorer/calibrator. Weighted runs also
-save `reference_features.npz` (no task labels), `calibration_weights.npz`, `test_weights.npz`,
-and `weighting.json`. `metrics.json` contains overall, per-class and per-test-domain results.
-For paired comparisons reuse the frozen checkpoint and source exports, change only
-`calibration_config.weighted_cp`, and rerun calibration/prediction/evaluation. Keep the
-reference domain reservation unchanged; changing it requires a new data split and training.
+Weighted runs save `target_features.npz` without task labels, `calibration_weights.npz`,
+`test_weights.npz`, and `weighting.json` with ESS, clipping, convergence and target
+counts. The CP bundle includes scorer, calibrator and ratio estimator. Failed notebook
+reruns invalidate downstream results before any work begins.
 
-Notebook reruns invalidate prior calibration/prediction state before starting. If either
-stage fails, later stages refuse to reuse stale results; rerun the failed stage successfully
-first. Fitted ratio estimators retain their own configuration snapshot.
+Evaluation preserves historical train/validation/calibration/test membership and ignores
+any extra legacy split. Historical weighting selectors are removed with an explicit
+migration message; fresh weighted evaluations always use target inputs. Historical
+result directories are not rewritten. New YAML files reject removed selector keys.
 
 
 ## Architecture and direct softmax CP switches
 
-Set `model.kind` to `dual_cnn` (unchanged default), `dual_resnet`, `tcn_stft`,
-`cnn_transformer`, or `dual_link_graph`. Each new model lives in its matching `step02_models/*.py`;
-`common.py` supplies shared feature mixing, the STFT encoder, and compact fusion.
+Set `model.kind` to `dual_cnn`, `cnn_transformer`, or `dual_link_graph`. Each new model lives in its matching `step02_models/*.py`;
+`common.py` supplies shared convolution/residual blocks and paired-input forward flow.
+It also owns `RestoreSTFT`, `conv_block` (Conv→GN→GELU), and residual blocks. Transformer construction and sinusoidal position helpers
+live in `cnn_transformer.py`, alongside its temporal stem and STFT channel fusion.
+`PairedModel` supplies only input validation and paired forward flow (including
+DualCNN). Each model explicitly declares both encoders, fusion, embedding and
+classifier; no parent creates layers that a subclass later replaces.
+`build_model` constructs all architectures from `ModelConfig`. Minimum time lengths
+are declared by the model and checked through `PairedModel` during construction
+and forward calls. `AdversarialClassifier.condition_classes` describes the optional
+conditioning labels for either adversarial head. `decoder.py` owns `PairedDecoder`;
+`encoder_background.py` assembles the independent task/background models.
+Single-layer classifiers are direct `Linear` modules: checkpoints now use
+`classifier.weight`/`classifier.bias` (including the corresponding task/background
+prefixes), without the former `.0` component. Old checkpoint keys are not migrated.
+Convolution blocks use GN followed by GELU. DualCNN uses 32/64 convolution
+channels without input normalization or branch dense layers. Each branch pools
+to 256 values; the shared head is Linear(512→128)/GELU, Linear(128→embedding),
+and the class head. Singleton training batches are retained. Earlier DualCNN
+checkpoints require the previous architecture; retrain for this compact version.
 All return the same task logits and embeddings, support the existing DA/CL losses,
 and save the model kind in the checkpoint/manifest. `evaluate.ipynb` restores the
 saved architecture; old manifests without a kind default to `dual_cnn`.
@@ -285,28 +270,38 @@ Changing architecture requires retraining; an old checkpoint cannot be reused.
 
 | Model | Temporal inductive bias |
 |---|---|
-| `dual_resnet` | Residual local convolutions, two gradual stride-2 reductions |
-| `tcn_stft` | Noncausal residual convolutions with dilations 1, 2, 4, 8 |
+| `dual_cnn` | Two valid convolutions with early temporal downsampling |
 | `cnn_transformer` | Local CNN, at most 64 ordered tokens, sinusoidal positions, two 4-head attention layers |
+| `dual_link_graph` | Link-local convolutions and Tx/Rx node-edge message passing |
 
-The three models in the table above mix the 3×270 feature channels at each time sample before temporal
-processing. They do not treat adjacent feature rows as spatial neighbors. Their
-STFT branch restores the existing frequency-first storage order and uses local
-2D residual convolutions. Both branches retain four pooled positions (STFT: 2×2),
-then use 512→128→embedding→class logits. New models use GroupNorm in convolution
-blocks rather than source-running BatchNorm statistics. This changes normalization
-as well as architecture; any improvement is not an isolated residual/attention
-ablation. None of these architectures guarantees domain invariance.
+`cnn_transformer` restores the frequency-first STFT storage order and fuses
+810 feature channels to 32 (GroupNorm/GELU), projects nonoverlapping 8×9
+frequency/time patches to width 64, adds fixed two-axis sinusoidal positions,
+and applies two 4-head Transformer layers (FFN 128, dropout 0.1). Right/bottom
+zero padding after fusion makes partial patches complete: 64×65 becomes 64×72,
+giving an 8×8 grid of 64 tokens. Other cache sizes use the same patch size and
+therefore may produce different token counts. Its STFT encoder has 240,480
+parameters; the temporal branch is unchanged. Background encoders use the same
+architecture when enabled. Pre-patch `cnn_transformer` checkpoints require the
+previous code; they cannot load into this new architecture.
+Both branches retain four pooled positions (STFT: 2×2),
+then use 512→128→embedding→class logits (CNNTransformer). DualLinkGraph instead
+outputs 128 values per branch and uses a 256→128 fusion. All three models use
+GroupNorm/GELU convolution blocks; Transformer and graph message-passing blocks
+also use LayerNorm. Both adversarial heads use Linear→GELU→Linear without
+normalization. Final embedding and classifier layers are linear. None of these
+architectures guarantees domain invariance. Changing ReLU to GELU does not change
+checkpoint tensor keys, but loading pre-change adversarial weights under GELU
+changes their computation; use the matching code for historical reproduction.
 
 A minimal override YAML for a new training run:
 
 ```yaml
 model:
-  kind: dual_resnet          # or tcn_stft / cnn_transformer / dual_link_graph / dual_cnn
+  kind: cnn_transformer      # or dual_cnn / dual_link_graph
 score:
   kind: softmax
 calibration:
-  class_conditional: false   # pooled ordinary split CP
   weighted_cp: false
 ```
 
@@ -318,8 +313,7 @@ remove the HBGB/SVM/KDE-only parameters.
 `softmax` uses `s(x,y)=1-softmax(logits(x))[y]` from the selected frozen task
 classifier. There is no intermediate fitting step. The same score is applied to
 validation, calibration, and test probabilities; ordinary finite-sample ranks
-and the existing strict p-value threshold are unchanged. `class_conditional` and
-`weighted_cp` remain independent options. Saved scorers expose `input_key`:
+and the existing strict p-value threshold are unchanged. `weighted_cp` remains independently selectable. Saved scorers expose `input_key`:
 pass probabilities for softmax and embeddings for the other scorers.
 
 For an existing run, use the score/calibration portion of this YAML as
@@ -377,3 +371,155 @@ preserve phase sign; ordered graph endpoints preserve pair identity, not recover
 phase discarded by preprocessing. GroupNorm operates within each encoded link
 (and within each subcarrier at the first STFT stage), so absolute link-energy
 information may be attenuated. This is an architectural tradeoff to validate.
+
+
+## Optional task/background decomposition
+
+Configure all switches in `experiments/baseline.yaml`; `run.ipynb` uses it when
+`config_path = None`. The `encoder_task` and optional `encoder_background` groups follow `model`,
+and CP weighting follows `calibration`, keeping settings in pipeline order.
+Set `encoder_background.enabled: true` to train the new architecture.
+The selected `model.kind` remains the task backbone. `encoder_background.enabled: false`
+builds only the task model and disables the paired decoder and both difference losses.
+The new architecture must be trained before background evaluation is available.
+
+```text
+paired input -> task backbone -> z -> activity classifier
+                              -> activity CL / reversed domain head
+paired input -> background encoder -> b -> domain classifier / domain CL
+                                       -> reversed activity head
+[z, b] -> decoder -> standardized time and signed-log STFT reconstruction
+z, b -> centered cross-correlation penalty
+```
+
+All source users share one background encoder. Task and background encoders use the
+same `model.kind`, `model.embedding_dim`, and input processing, with separately
+initialized parameters. There is no independent background dimension or model selector.
+The background domain head mirrors the task classifier with a domain-sized output;
+the reversed activity head uses its own `encoder_background.adversarial.hidden_dim`.
+Both adversary widths default to 128 in baseline.yaml and can be changed independently.
+The joint decoder receives `2 * model.embedding_dim` features.
+Use a new training run for the current configuration schema.
+
+The task objectives retain the
+`encoder_task.contrastive` and `encoder_task.adversarial` YAML controls. Under `encoder_background`,
+`domain`, `contrastive`, `adversarial`, and `difference` each have
+an independent `enabled` switch. The background contrastive positives are same-domain,
+different-activity pairs. The background activity head has detached fitting steps and
+its own optimizer, learning rate, weight decay, optimizer kwargs and scheduler under
+`encoder_background.adversarial`, using the same schema as the task adversary. It is frozen during
+the reversed encoder update. The task encoder, background encoder, decoder, and
+background domain head use the main optimizer/scheduler. Model selection remains
+clean validation task CE. Losses and available anchor fractions are saved in history/W&B.
+
+The decoder reconstructs the actual augmented model input, not raw CSI: standardized
+time and signed-log raw STFT magnitude. Frequency-first MATLAB packing is preserved.
+Low-resolution decoder seeds are upsampled to the original input shapes. Difference
+loss discourages linear correlation; neither it nor adversarial accuracy proves independence.
+
+`evaluate.ipynb` restores architecture settings from the saved manifest/checkpoint,
+not from today's YAML, and never updates network parameters. The former head-training
+diagnostic has been removed from evaluation. Its existing downstream scorer fitting
+and conformal calibration remain available. Set `evaluation_config_path` to
+`experiments/baseline.yaml` (or its absolute path) to apply its current evaluation
+settings. For background target weighting, set `calibration.weighted_cp: true`,
+`weighting.features: background`; weights always use unlabeled target inputs.
+Changing baseline for evaluation cannot retrofit a background branch onto an old model.
+
+`weighting` supports:
+- `features: task | background` (background requires the saved branch).
+- `method: density_ratio | domain_mixture` (logistic source/target ratio, or fitted
+  mixture proportions over source domains using a source-domain classifier).
+
+Target mode uses unlabeled test inputs to estimate weights; the same inputs are then
+predicted, so this is empirical transductive adaptation, not an exact finite-sample
+coverage claim. Task labels are only used for evaluation on target. Calibration labels
+supply true-label scores and source/calibration stratum matching, not encoder training.
+Estimated ratios, mixture assumptions, feature shift and clipping can affect validity.
+Source weights match calibration domain/class proportions before ratio fitting.
+Mixture mode records estimated target proportions; it cannot model backgrounds outside
+the source component family. Calibration pools all true-label scores.
+
+For controlled comparisons, restore the same checkpoint and change only evaluation
+YAML: ordinary CP (`weighted_cp: false`), task weighting, background weighting, then
+background mixture weighting. Exports include `background` arrays for both branches'
+analysis, weight ESS/clipping diagnostics, and the unchanged NN accuracy line on plots.
+
+Notebook reruns invalidate downstream scorer/calibration/prediction state before
+starting work, so failed reruns cannot reuse an earlier CP result. Task and
+background arrays are exported together in one ordered pass, with bounded
+inference batches. Interactive runs also save `config.yaml`; existing experiment
+manifests/checkpoints are protected against accidental overwrite. The old automatic
+head-only scheduler experiment is no longer part of `run.ipynb`.
+
+## Encoder objective groups
+
+`encoder_task` groups `task`, `contrastive`, `adversarial`, and `difference`; `encoder_background`
+groups `domain`, `contrastive`, `adversarial`, and `difference`. The separate `decoder`
+group controls reconstruction and is effective only when background is enabled.
+The common `model` section still selects both encoder architectures and dimensions.
+The background master switch is independent of task CE.
+
+`encoder_task.task.enabled` defaults to true and `weight` to 1. Disabling it or using
+weight 0 removes CE from the training objective without removing the prediction head.
+Other enabled objectives can still update the task encoder. Disabled CE supplies no
+classifier gradients, so the optimizer does not apply momentum/decay to that head.
+If no objective supplies gradients, the main optimizer skips the batch update.
+`train_loss` and `validation_loss` remain raw task CE; `train_objective_loss` reports
+the combined weighted training objective. Early stopping and checkpoint selection
+continue to use clean, unweighted validation CE.
+
+New manifests/checkpoints save `encoder_task`, `encoder_background`, and `decoder`;
+the manifest also records the shared `data.domain_key`. Historical
+YAML/metadata using top-level `contrastive`/`adversarial` or `disentanglement` is
+translated for compatibility. Ambiguous YAML containing both old and new forms of
+the same settings is rejected. Evaluation restores saved groups and never trains.
+
+`encoder_background.adversarial.conditional` independently controls whether the
+background activity adversary receives the true training-domain one-hot alongside b.
+Both adversaries use `conditional: true` in baseline.yaml, independently configurable.
+Gradient reversal affects b only. Both detached head fitting and reversed encoder
+updates use the domain condition. Enabling it changes the adversarial head shape and
+requires a new training run. Task prediction and density-ratio estimation still need
+only input features. Read-only conditional activity diagnostics skip unseen domains
+instead of inventing a condition, and report the evaluated sample count; accuracy
+may remain high from domain/activity correlations alone.
+
+
+The shared `data.domain_key` supplies training, contrastive, sampling, diagnostics and
+weighting and holdout domain labels. `split.test_domains` contains values of this
+shared key; there is no separate domain selector under `split`.
+
+Each encoder has its own `difference.enabled` and `difference.weight`. The task loss
+uses detached background features; the background loss uses detached task features.
+Equal weights reproduce the previous joint penalty's gradient on each encoder;
+the reported sum of the two loss values is twice the former scalar penalty.
+Both losses are inactive without a background encoder.
+
+`decoder.enabled` and `decoder.weight` control paired reconstruction, jointly updating
+both encoders and the decoder through the main optimizer/scheduler. CL has no separate
+projection head or optimizer; its encoder gradients also use the main optimizer.
+
+When background is enabled, active background domain/activity heads report clean
+validation loss, accuracy and sample count every epoch. Unknown domain labels are
+excluded from domain-head and conditional activity-head validation. Unconditional
+activity validation can use all validation samples. Background `plateau` scheduling
+uses `validation_background_activity_loss`, skipping epochs without eligible samples;
+cosine scheduling runs once per epoch. Both adversarial optimizer configurations are
+independent and initially equal in baseline.yaml. Best checkpoint selection remains
+based only on task validation CE.
+
+
+After training, `run.ipynb` clears gradients and releases the three optimizers,
+their schedulers, and retained training tensors before restoring the selected model.
+Checkpoints are loaded on CPU; only model weights remain on the GPU for inference.
+The same cleanup runs before export, including when the restoration cell was skipped.
+Configuration, history, loaders and model architecture remain available. Recreate
+training setup to train again; this cleanup does not provide optimizer-state resume.
+
+
+`inference.batch_size` in baseline.yaml controls run/evaluate export microbatches
+(default 4), including unlabeled target features for weighting. It does not change
+training batches or exported sample order. Evaluation uses the current baseline's
+inference budget, with optional `evaluation_config_path` overrides, rather than the
+historical run's memory budget. Each new CP result records `inference.batch_size`.

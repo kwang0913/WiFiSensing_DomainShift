@@ -1,120 +1,166 @@
-# Single experiment. Paths in data.datasets are relative to python/dataset/.
-split_seed: 42               # Data splits and scorer CV folds
+# Default experiment for run.ipynb; parameters are ordered by pipeline stage.
+# evaluate.ipynb restores the saved architecture; an explicit YAML override changes
+# only inference, score, calibration, weighting and alpha_grid.
+split_seed: 42               # Data splits, scorer randomness and density-ratio fitting
 training_seed: 42            # Initialization, shuffle, Dropout and augmentation
-prepare_npy_cache: false
+prepare_npy_cache: false     # true: convert data/*_raw.mat recursively; false: use existing NPY pairs
 
 data:
-  datasets: [crossroom]  # List of datasets to load; each dataset is a subdirectory of python/dataset/
-  filename_template: "{user}_{activity}_{position}[_r{recording}]_time.npy"
-  task: activity
+  datasets: [crossroom]      # Paths relative to python/dataset/; absolute cache paths also work
+  filename_template: "{user}_{activity}_{position}[_r{recording}]_time.npy" # [...] is optional
+  task: activity            # Filename metadata field used as the prediction label
+  domain_key: user           # Shared domain for splitting, both encoders, CL, sampling and weighting
 
 split:
-  mode: domain_holdout       # domain_holdout / random
-  domain_key: user      # Filename metadata field, distinct from data.task
-  test_domains: [cong]      # One or more values, e.g. [baking, walk]; all their recordings go to test
-  validation_fraction: 0.10
-  calibration_fraction: 0.20
-  test_fraction: 0.20       # Used only in random mode; other fractions use source segments in holdout mode
+  mode: domain_holdout       # holdout: source split by segment; random: split whole recordings
+  test_domains: [cong]       # Values of data.domain_key; all their segments go to test in holdout mode
+  validation_fraction: 0.1 # Holdout: fraction of non-test source segments per class
+  calibration_fraction: 0.2 # Same source denominator; random mode uses all recordings
+  test_fraction: 0.2        # Random mode only; all split fractions then refer to recording counts
 
 model:
-  kind: dual_link_graph           # dual_cnn / dual_resnet / tcn_stft / cnn_transformer / dual_link_graph
-  embedding_dim: 32
-  stft_frequency_bins: 64    # 32 for setting_dataset/self_time; 64 for crossroom
+  kind: cnn_transformer           # dual_cnn / cnn_transformer / dual_link_graph
+  embedding_dim: 32         # Output dimension of each encoder, including background when enabled
+  stft_frequency_bins: 64   # 32 for setting_dataset/self_time; 64 for crossroom; must match cached STFT layout
+
+encoder_task:
+  task:
+    enabled: true
+    weight: 1              # Updates task encoder/head; validation CE stays unweighted
+  contrastive:
+    enabled: true
+    weight: 0.5               # Multiplier on task CL, added to task CE; uses normalized embeddings
+    temperature: 5.0e-2         # Positive: same task label, different domain
+    # Anchors without cross-domain positives in the batch are skipped.
+  adversarial:
+    enabled: true
+    conditional: true        # Task-domain adversary also receives true task-label one-hot; never fed to encoder
+    max_weight: 0.2            # Maximum reversed gradient multiplier on the encoder
+    warmup_epochs: 10          # Linear ramp from zero; 0 uses max_weight immediately
+    hidden_dim: 128          # Task-domain adversary hidden width; background config has its own
+    steps_per_batch: 5         # Domain-only updates on detached embeddings, then ONE encoder update
+    optimizer: sgd            # Task-domain head optimizer; configured independently of training.optimizer
+    learning_rate: 1.0e-3
+    weight_decay: 1.0e-4
+    optimizer_kwargs: {momentum: 0.9, nesterov: true}
+    scheduler:
+      name: cosine              # none / cosine / plateau; independent of the encoder scheduler
+      kwargs: {eta_min: 1.0e-5} # Cosine LR floor; plateau instead monitors clean validation_domain_loss
+  difference:
+    enabled: true
+    weight: 1.0e-2           # Decorrelate from detached background; updates only task encoder
+
+# Optional background branch; all child switches require enabled: true.
+encoder_background:
+  enabled: true
+  domain:
+    enabled: true
+    weight: 1            # Background domain CE; updates only background encoder/head
+  contrastive:
+    enabled: true
+    weight: 0.5            # Multiplier on background supervised contrastive loss
+    temperature: 5.0e-2       # Positive: same domain, different task label; lower = sharper similarities
+  adversarial:
+    enabled: true
+    conditional: true        # Background activity adversary receives true domain one-hot; never fed to encoder
+    max_weight: 0.2            # Maximum reversed gradient multiplier on the encoder
+    warmup_epochs: 10          # Linear ramp from zero; 0 uses max_weight immediately
+    hidden_dim: 128          # Background activity adversary hidden width; independent of task
+    steps_per_batch: 5         # Activity-head-only updates on detached embeddings, then ONE encoder update
+    optimizer: sgd            # Background activity-head optimizer; configured independently of training.optimizer
+    learning_rate: 1.0e-3
+    weight_decay: 1.0e-4
+    optimizer_kwargs: {momentum: 0.9, nesterov: true}
+    scheduler:
+      name: cosine              # none / cosine / plateau; independent of the encoder scheduler
+      kwargs: {eta_min: 1.0e-5} # Cosine LR floor; plateau instead monitors clean validation_background_activity_loss
+  difference:
+    enabled: true
+    weight: 1.0e-2           # Decorrelate from detached task; updates only background encoder
+    # Both branches use centered, column-normalized cross-correlation; not independence.
+
+decoder:
+  enabled: true             # Effective only with encoder_background.enabled; shares main optimizer/scheduler
+  weight: 0.1            # Mean time/STFT relative MSE; updates both encoders and decoder
+  # Targets augmented time and signed-log STFT inputs.
 
 augmentation:
-  enabled: true            # Master switch; individual switches below select the combination
+  enabled: true            # Training only; clean validation, calibration and test use no augmentation
   time_noise:
     enabled: true
     kind: gaussian          # none / gaussian / uniform
-    relative_std: 0.02      # Noise std relative to each sample/group RMS
+    relative_std: 2.0e-2      # Noise std relative to each sample/group RMS
     probability: 0.5       # Per-sample chance of adding noise
   time_mask:
     enabled: true
-    max_fraction: 0.05      # Random width: 0..floor(T * fraction), shared across rows/groups
+    max_fraction: 5.0e-2      # Random width: 0..floor(T * fraction), shared across rows/groups
     probability: 0.5       # Per-sample chance of selecting a mask; width can still be zero
   stft_mask:
     enabled: true
-    frequency_bins: 64      # 32 for setting_dataset/self_time; 64 for crossroom
-    time_max_fraction: 0.05       # Maximum fraction of time frames, not flattened width
-    frequency_max_fraction: 0.05  # Maximum fraction of frequency bins
+    frequency_bins: 64      # 32 for setting_dataset/self_time; 64 for crossroom; must equal model.stft_frequency_bins
+    time_max_fraction: 5.0e-2       # Maximum fraction of time frames, not flattened width
+    frequency_max_fraction: 5.0e-2  # Maximum fraction of frequency bins
     probability: 0.5             # Applied independently per sample and per axis
 
 training:
   epochs: 100
-  batch_size: 128
+  batch_size: 16           # Used when sampling.enabled=false; balanced sampler overrides this
   optimizer: sgd            # adamw / adam / sgd / rmsprop
-  learning_rate: 0.001
-  weight_decay: 0.0001
+  learning_rate: 1.0e-2
+  weight_decay: 1.0e-3     # Main optimizer regularization; adversarial heads configure their own
   # Select ONE kwargs mapping matching the optimizer ({} uses PyTorch defaults).
   # sgd:     {momentum: 0.9, dampening: 0.0, nesterov: true}
-  # adamw:   {betas: [0.9, 0.999], eps: 1.0e-8, amsgrad: false}
-  # adam:    {betas: [0.9, 0.999], eps: 1.0e-8, amsgrad: false}
-  # rmsprop: {alpha: 0.99, eps: 1.0e-8, momentum: 0.9, centered: false}
+  # adamw:   {betas: [0.9, 9.99e-1], eps: 1.0e-8, amsgrad: false}
+  # adam:    {betas: [0.9, 9.99e-1], eps: 1.0e-8, amsgrad: false}
+  # rmsprop: {alpha: 9.9e-1, eps: 1.0e-8, momentum: 0.9, centered: false}
   # Nesterov requires momentum > 0 and dampening = 0.
   # Keep learning_rate and weight_decay above; do not repeat lr/weight_decay here.
   # When editing this file, replace kwargs too when changing optimizer.
   optimizer_kwargs: {momentum: 0.9, nesterov: true}
-  patience: null            # null: all epochs; e.g. 10: early stopping on validation loss
-  min_delta: 0.0            # Minimum loss improvement to reset early-stopping patience
-
-scheduler:
-  name: cosine              # none / cosine / plateau; updated once per epoch
-  # none:    {}
-  # cosine:  {eta_min: 1.0e-6}  # T_max defaults to training.epochs
-  # plateau: {factor: 0.5, patience: 5, min_lr: 1.0e-6}  # Monitors validation loss
-  kwargs: {eta_min: 0.000001}
-
-contrastive:
-  enabled: true
-  weight: 0.5               # Added to task CE; normalized embedding similarities
-  temperature: 0.05         # Positive: same task label, different domain
+  patience: null            # null: all epochs; otherwise stop after this many unimproved validation epochs
+  min_delta: 0.0            # Minimum clean task-CE improvement to reset patience; best.pt uses lowest CE
+  scheduler:
+    name: cosine              # none / cosine / plateau; main optimizer scheduler, updated once per epoch
+    # none:    {}
+    # cosine:  {eta_min: 1.0e-6}  # T_max defaults to training.epochs
+    # plateau: {factor: 0.5, patience: 5, min_lr: 1.0e-6}  # Monitors clean validation task CE
+    kwargs: {eta_min: 1.0e-4} # Cosine minimum learning rate; independent of weight decay
 
 sampling:
   enabled: true            # Train only; false restores shuffled training.batch_size
   classes_per_batch: 5     # Capped at the number of available task classes
   domains_per_class: 4     # Available domains first; repeat slots if fewer exist
-  samples_per_domain: 3    # Effective batch size = classes * domain slots * samples
-
-adversarial:
-  enabled: true
-  conditional: true        # Domain head also receives the true task label
-  domain_key: user       # Shared domain field for adversarial, contrastive and sampling; differs from data.task
-  max_weight: 0.2            # Maximum reversed gradient multiplier on the encoder
-  warmup_epochs: 10          # Linear ramp from zero; 0 uses max_weight immediately
-  hidden_dim: 128
-  steps_per_batch: 5         # Domain-only updates on detached embeddings, then ONE encoder update
-  optimizer: sgd            # Same options/kwargs as training.optimizer; independent optimizer
-  learning_rate: 0.001
-  weight_decay: 0.0001
-  optimizer_kwargs: {momentum: 0.9, nesterov: true}
-  scheduler:
-    name: cosine              # none / cosine / plateau; independent of the encoder scheduler
-    kwargs: {eta_min: 0.00001}              # plateau monitors clean validation_domain_loss
+  samples_per_domain: 3    # Per class/domain slot; effective batch = capped classes * domains * samples (here 10)
 
 monitoring:
   enabled: true
   project: wifi-conformal
-  mode: online              # online after wandb login
-  entity: null
-  name: null
-  gradient_interval: 100
-  parameter_histograms: true
-  activation_gradients: true
-  layers: null               # e.g. ["time_encoder.1", "fusion.*", "embedding"]
+  mode: online              # online / offline; online requires W&B authentication
+  entity: null              # null: default W&B account/team
+  name: null                # null: use experiment directory name
+  gradient_interval: 100    # Sample gradient diagnostics at batch 1 and every N training batches
+  parameter_histograms: true # Parameter/gradient histograms on the diagnostic schedule
+  activation_gradients: true # Hook selected layer outputs for gradient statistics
+  layers: null              # null: all Conv2d/Linear/AdaptiveAvgPool2d modules; otherwise module-name glob patterns
+  # With encoder_background.enabled: e.g. ["task_model.embedding", "background_encoder.embedding"].
+  # Without it: e.g. ["embedding", "fusion.*"]. Every pattern must match the selected model.
+
+inference:
+  batch_size: 4             # GPU microbatch for export in run/evaluate; independent of training batch size
 
 score:
-  kind: softmax
+  kind: softmax            # Score = 1 - NN probability; no separate scorer fitting
 
 # score:
-#   kind: kde                  # kde, svm, hbgb
+#   kind: kde                  # Embedding-based score; alternative sections replace the active score block
 #   kernel: gaussian
 #   bandwidth: 4.0
 
 # score:
 #   kind: svm
-#   kernel: linear       # 或 rbf
+#   kernel: linear             # linear / rbf
 #   C: 1.0
-#   gamma: scale         # linear 时不使用
+#   gamma: scale               # Ignored by the linear kernel
 
 # score:
 #   kind: hbgb
@@ -123,14 +169,20 @@ score:
 #   max_leaf_nodes: 7
 
 calibration:
-  # alpha: 0.1
-  class_conditional: false # true: class-conditional; false: pooled
-  weighted_cp: false        # true: auxiliary-domain weighting; false: existing rank CP
+  # alpha: 0.1             # Omitted: schema default 0.1; nominal coverage = 1 - alpha
+  weighted_cp: true        # true uses estimated density-ratio weights
 
+# For background target weighting: enable encoder_background before training, then set
+# calibration.weighted_cp: true and weighting.features: background.
 weighting:
-  reference_domains: []     # Same domain_key as split; disjoint from test_domains. Reserved even when CP is unweighted.
+  # Always estimate weights from unlabeled test inputs; no extra domains are reserved.
+  # Mixture mode needs >=2 training domains; estimated weights do not guarantee target coverage.
+  features: background            # task / background; background requires a trained disentangled checkpoint
+  method: domain_mixture     # density_ratio: source/target logistic classifier; domain_mixture: source-domain mixture
   C: 1.0                   # Inverse regularization strength of the independent logistic classifier
-  max_iter: 1000
+  max_iter: 1000           # Logistic fit limit; also mixture-proportion iteration limit in domain_mixture
   clip_min: null            # Optional explicit density-ratio clipping; changes the estimated ratio
-  clip_max: null
-alpha_grid: [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.10]
+  clip_max: null           # null: no bound on this side; inspect saved weight/ESS diagnostics
+
+# Evaluation sweep; calibration.alpha is automatically included, then values sorted/deduplicated.
+alpha_grid: [1.0e-2, 2.0e-2, 3.0e-2, 4.0e-2, 5.0e-2, 6.0e-2, 7.0e-2, 8.0e-2, 9.0e-2, 0.1]

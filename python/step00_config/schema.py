@@ -1,5 +1,5 @@
 """Configuration types for experiment components."""
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 import math
 
 
@@ -9,7 +9,6 @@ class SplitConfig:
     calibration_fraction: float = 0.20
     test_fraction: float = 0.20
     mode: str = "domain_holdout"
-    domain_key: str = "activity"
     test_domains: list = field(default_factory=lambda: ["walk"])
 
     @property
@@ -28,6 +27,15 @@ class TrainingConfig:
     min_delta: float = 0.0
     weight_decay: float = 1e-4
     optimizer_kwargs: dict = field(default_factory=dict)
+
+    scheduler: dict = field(default_factory=lambda: {"name": "none", "kwargs": {}})
+
+    def __post_init__(self):
+        if not isinstance(self.scheduler, dict) or self.scheduler.keys() - {"name", "kwargs"}:
+            raise ValueError("Invalid training.scheduler")
+        self.scheduler = {"name": "none", "kwargs": {}, **self.scheduler}
+        if self.scheduler["name"] not in ("none", "cosine", "plateau") or not isinstance(self.scheduler["kwargs"], dict):
+            raise ValueError("Invalid training.scheduler")
 
 
 @dataclass
@@ -82,23 +90,24 @@ class HBGBConfig:
 @dataclass
 class CalibrationConfig:
     alpha: float = 0.1
-    class_conditional: bool = True
     weighted_cp: bool = False
 
 
 @dataclass
 class WeightingConfig:
-    reference_domains: list = field(default_factory=list)
     C: float = 1.0
     max_iter: int = 1000
     clip_min: float | None = None
     clip_max: float | None = None
 
+    features: str = "task"
+    method: str = "density_ratio"
+
     def __post_init__(self):
-        if not isinstance(self.reference_domains, list) or any(not isinstance(v, str) for v in self.reference_domains):
-            raise ValueError("weighting.reference_domains must be a list of domain strings")
-        if len(set(self.reference_domains)) != len(self.reference_domains):
-            raise ValueError("weighting.reference_domains must not contain duplicates")
+        if self.features not in ("task", "background"):
+            raise ValueError("Invalid weighting.features")
+        if self.method not in ("density_ratio", "domain_mixture"):
+            raise ValueError("Invalid weighting.method")
         if not math.isfinite(self.C) or self.C <= 0:
             raise ValueError("weighting.C must be finite and positive")
         if not isinstance(self.max_iter, int) or self.max_iter < 1:
@@ -111,13 +120,13 @@ class WeightingConfig:
 
 
 @dataclass
-class DualCNNConfig:
+class ModelConfig:
     embedding_dim: int = 32
     stft_frequency_bins: int = 32
     kind: str = "dual_cnn"
 
     def __post_init__(self):
-        if self.kind not in ("dual_cnn", "dual_resnet", "tcn_stft", "cnn_transformer", "dual_link_graph"):
+        if self.kind not in ("dual_cnn", "cnn_transformer", "dual_link_graph"):
             raise ValueError(f"Unknown model kind: {self.kind}")
 
 
@@ -125,7 +134,6 @@ class DualCNNConfig:
 class AdversarialConfig:
     enabled: bool = False
     conditional: bool = False
-    domain_key: str = "activity"
     max_weight: float = 0.1
     warmup_epochs: int = 10
     hidden_dim: int = 64
@@ -137,6 +145,21 @@ class AdversarialConfig:
     scheduler: dict = field(default_factory=lambda: {"name": "none", "kwargs": {}})
 
     def __post_init__(self):
+        for key in ("enabled", "conditional"):
+            if not isinstance(getattr(self, key), bool):
+                raise ValueError(f"{key} must be boolean")
+        for key in ("steps_per_batch", "hidden_dim", "warmup_epochs"):
+            if type(getattr(self, key)) is not int:
+                raise ValueError(f"{key} must be an integer")
+        if self.optimizer not in ("sgd", "adam", "adamw", "rmsprop"):
+            raise ValueError("Invalid adversarial optimizer")
+        if not isinstance(self.optimizer_kwargs, dict):
+            raise ValueError("Adversarial optimizer_kwargs must be a mapping")
+        if not isinstance(self.scheduler, dict) or self.scheduler.keys() - {"name", "kwargs"}:
+            raise ValueError("Invalid adversarial scheduler")
+        self.scheduler = {"name": "none", "kwargs": {}, **self.scheduler}
+        if self.scheduler["name"] not in ("none", "cosine", "plateau") or not isinstance(self.scheduler["kwargs"], dict):
+            raise ValueError("Invalid adversarial scheduler")
         if not isinstance(self.steps_per_batch, int) or self.steps_per_batch < 1:
             raise ValueError("Adversarial steps_per_batch must be a positive integer")
         if not math.isfinite(self.learning_rate) or self.learning_rate <= 0:
@@ -178,3 +201,93 @@ class SamplingConfig:
                 raise ValueError(f"Sampling {name} must be a positive integer")
         if self.enabled and (self.classes_per_batch < 2 or self.domains_per_class < 2):
             raise ValueError("Balanced batches require at least two classes and two domain slots per class")
+
+
+@dataclass
+class EncoderBackgroundConfig:
+    enabled: bool = False
+    domain: dict = field(default_factory=lambda: {"enabled": True, "weight": 0.2})
+    contrastive: dict = field(default_factory=lambda: {"enabled": True, "weight": 0.1, "temperature": 0.1})
+    adversarial: dict = field(default_factory=lambda: asdict(AdversarialConfig(enabled=True)))
+    difference: dict = field(default_factory=lambda: {"enabled": True, "weight": 0.01})
+
+    def __post_init__(self):
+        if not isinstance(self.enabled, bool):
+            raise ValueError("encoder_background.enabled must be boolean")
+        self.adversarial = asdict(AdversarialConfig(**{
+            **asdict(AdversarialConfig(enabled=True)), **self.adversarial}))
+        defaults = {f.name: f.default_factory() for f in self.__dataclass_fields__.values()
+                    if f.name in ("domain", "contrastive", "difference")}
+        for key, default in defaults.items():
+            value = getattr(self, key)
+            if not isinstance(value, dict) or value.keys() - default.keys():
+                raise ValueError(f"Invalid encoder_background.{key}")
+            value = {**default, **value}
+            if not isinstance(value["enabled"], bool):
+                raise ValueError(f"{key}.enabled must be boolean")
+            for name, x in value.items():
+                if name == "enabled":
+                    continue
+                if isinstance(x, bool) or not isinstance(x, (int, float)) or not math.isfinite(x) or x < 0:
+                    raise ValueError(f"Invalid {key}.{name}")
+                if name == "temperature" and x <= 0:
+                    raise ValueError(f"{key}.{name} must be positive")
+            setattr(self, key, value)
+
+
+@dataclass
+class DecoderConfig:
+    enabled: bool = False
+    weight: float = 0.1
+
+    def __post_init__(self):
+        validate_difference({"enabled": self.enabled, "weight": self.weight}, "decoder")
+
+
+def validate_difference(settings, name):
+    if not isinstance(settings, dict) or settings.keys() - {"enabled", "weight"}:
+        raise ValueError(f"Invalid {name}")
+    result = {"enabled": True, "weight": 0.01, **settings}
+    if not isinstance(result["enabled"], bool):
+        raise ValueError(f"{name}.enabled must be boolean")
+    value = result["weight"]
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+        raise ValueError(f"{name}.weight must be finite and nonnegative")
+    return result
+
+
+@dataclass
+class EncoderTaskConfig:
+    task: dict = field(default_factory=lambda: {"enabled": True, "weight": 1.0})
+    contrastive: dict = field(default_factory=lambda: asdict(ContrastiveConfig()))
+    adversarial: dict = field(default_factory=lambda: asdict(AdversarialConfig()))
+
+    difference: dict = field(default_factory=lambda: {"enabled": True, "weight": 0.01})
+
+    def __post_init__(self):
+        if not isinstance(self.task, dict) or self.task.keys() - {"enabled", "weight"}:
+            raise ValueError("Invalid encoder_task.task")
+        self.task = {"enabled": True, "weight": 1.0, **self.task}
+        if not isinstance(self.task["enabled"], bool):
+            raise ValueError("encoder_task.task.enabled must be boolean")
+        weight = self.task["weight"]
+        if isinstance(weight, bool) or not isinstance(weight, (int, float)) or not math.isfinite(weight) or weight < 0:
+            raise ValueError("encoder_task.task.weight must be finite and nonnegative")
+        self.difference = validate_difference(self.difference, "encoder_task.difference")
+        self.contrastive = asdict(ContrastiveConfig(**self.contrastive))
+        self.adversarial = asdict(AdversarialConfig(**self.adversarial))
+
+    @classmethod
+    def from_saved(cls, record):
+        if "encoder_task" in record:
+            return cls(**record["encoder_task"])
+        return cls(contrastive=record.get("contrastive", {}), adversarial=record.get("adversarial", {}))
+
+
+@dataclass
+class InferenceConfig:
+    batch_size: int = 4
+
+    def __post_init__(self):
+        if type(self.batch_size) is not int or self.batch_size < 1:
+            raise ValueError("inference.batch_size must be a positive integer")

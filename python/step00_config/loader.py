@@ -4,7 +4,7 @@ from pathlib import Path
 
 import yaml
 
-from .schema import KDEConfig, SVMConfig, HBGBConfig, SoftmaxConfig, WeightingConfig, DualCNNConfig
+from .schema import KDEConfig, SVMConfig, HBGBConfig, SoftmaxConfig, WeightingConfig, ModelConfig, EncoderBackgroundConfig, EncoderTaskConfig, DecoderConfig, TrainingConfig, InferenceConfig
 
 BASELINE = Path(__file__).resolve().parents[1] / "experiments/baseline.yaml"
 SCORE_CONFIGS = {"kde": KDEConfig, "svm": SVMConfig, "hbgb": HBGBConfig, "softmax": SoftmaxConfig}
@@ -36,6 +36,18 @@ def load_config(path=None):
     overrides = yaml.safe_load(Path(path).expanduser().read_text()) if path else {}
     if not isinstance(overrides, dict):
         raise ValueError("Experiment YAML must contain a mapping of settings")
+    # Normalize older YAML layouts before strict merging; the returned config is canonical.
+    for old, new in (("disentanglement", "encoder_background"),):
+        if old in overrides:
+            if new in overrides:
+                raise ValueError(f"Use only {new}, not both {old} and {new}")
+            overrides[new] = overrides.pop(old)
+    for key in ("contrastive", "adversarial"):
+        if key in overrides:
+            group = overrides.setdefault("encoder_task", {})
+            if not isinstance(group, dict) or key in group:
+                raise ValueError(f"Conflicting legacy and encoder_task.{key} settings")
+            group[key] = overrides.pop(key)
     # Older experiment files used one seed for all randomness.
     if "seed" in overrides:
         old_seed = overrides.pop("seed")
@@ -58,16 +70,18 @@ def load_config(path=None):
     datasets = config["data"]["datasets"]
     if not isinstance(datasets, list) or not datasets:
         raise ValueError("data.datasets must be a nonempty list of cache directories")
-    DualCNNConfig(**config["model"])
+    InferenceConfig(**config["inference"])
+    TrainingConfig(**config["training"])
+    ModelConfig(**config["model"])
+    EncoderTaskConfig(**config["encoder_task"])
+    background = EncoderBackgroundConfig(**config["encoder_background"])
+    DecoderConfig(**config["decoder"])
+    if not isinstance(config["data"]["domain_key"], str) or not config["data"]["domain_key"]:
+        raise ValueError("data.domain_key must be a nonempty string")
     weighting = WeightingConfig(**config["weighting"])
     enabled = config["calibration"]["weighted_cp"]
     if not isinstance(enabled, bool):
         raise ValueError("calibration.weighted_cp must be true or false")
-    if enabled and not weighting.reference_domains:
-        raise ValueError("Weighted CP requires nonempty weighting.reference_domains")
-    if weighting.reference_domains:
-        if config["split"]["mode"] != "domain_holdout":
-            raise ValueError("Reference domains require domain_holdout splitting")
-        if set(weighting.reference_domains) & set(config["split"]["test_domains"]):
-            raise ValueError("Reference domains and test domains must be disjoint")
+    if enabled and weighting.features == "background" and not background.enabled:
+        raise ValueError("Background weighting requires encoder_background.enabled")
     return config

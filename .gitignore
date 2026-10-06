@@ -46,7 +46,7 @@ Thumbs.db
 
 # Regenerable NumPy feature cache
 /python/dataset/
-/python/experiments/
+/python/experiments/*
 /python/slurm/
 !/python/experiments/baseline.yaml
 
