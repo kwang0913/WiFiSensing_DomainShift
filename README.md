@@ -38,7 +38,18 @@ flowchart LR
     C --> F["Fusion<br/>512 → 128"]
     F --> Z["Embedding<br/>128 → 32"]
     Z --> H["Classifier<br/>32 → classes"]
+
+    classDef time fill:#e8f1ff,stroke:#3b73b9,color:#1e293b
+    classDef stft fill:#e7f5ec,stroke:#38845b,color:#1e293b
+    classDef attention fill:#f0e9fa,stroke:#865bb0,color:#1e293b
+    classDef head fill:#fff1df,stroke:#b87928,color:#1e293b
+    class TS,TT time
+    class SS,ST stft
+    class TA,SA attention
+    class TP,SP,C,F,Z,H head
 ```
+
+Colors match the corresponding block diagrams: blue for time preprocessing, green for STFT preprocessing, purple for Transformer blocks, and orange for pooling and prediction. Gray identifies the reusable Conv block within the time stem.
 
 <details>
 <summary>Block definitions</summary>
@@ -52,7 +63,8 @@ flowchart LR
         C["Convolution"] --> N["GroupNorm<br/>8 groups"]
         N --> G["GELU"]
     end
-    style BLOCK fill:#eef5ff,stroke:#64748b,color:#1e293b
+    style BLOCK fill:#eef1f5,stroke:#64748b,color:#1e293b
+    classDef default fill:#ffffff,stroke:#64748b,color:#1e293b
 ```
 
 **Time stem and tokens**
@@ -66,7 +78,10 @@ flowchart LR
         C2 --> P["Adaptive average pool<br/>at most 64 tokens"]
         P --> PE["Add 1D<br/>sinusoidal positions"]
     end
-    style BLOCK fill:#eef5ff,stroke:#64748b,color:#1e293b
+    style BLOCK fill:#e8f1ff,stroke:#3b73b9,color:#1e293b
+    classDef default fill:#ffffff,stroke:#64748b,color:#1e293b
+    classDef conv fill:#eef1f5,stroke:#64748b,color:#1e293b
+    class C1,C2 conv
 ```
 
 **STFT fusion and patch tokens**
@@ -81,7 +96,8 @@ flowchart LR
         PAD --> PATCH["Conv2D: 32 → 64<br/>kernel = stride = 8 × 9"]
         PATCH --> T["Flatten patch grid<br/>Add 2D sinusoidal positions"]
     end
-    style BLOCK fill:#eef5ff,stroke:#64748b,color:#1e293b
+    style BLOCK fill:#e7f5ec,stroke:#38845b,color:#1e293b
+    classDef default fill:#ffffff,stroke:#64748b,color:#1e293b
 ```
 
 Patch dimensions are frequency bins × time frames.
@@ -103,7 +119,8 @@ flowchart LR
         ADD2 --> N2["LayerNorm"]
         N1 --> ADD2
     end
-    style BLOCK fill:#eef5ff,stroke:#64748b,color:#1e293b
+    style BLOCK fill:#f0e9fa,stroke:#865bb0,color:#1e293b
+    classDef default fill:#ffffff,stroke:#64748b,color:#1e293b
 ```
 
 Dropout is 0.1, including attention-weight dropout. Each branch stacks two blocks.
@@ -127,7 +144,10 @@ flowchart LR
         H --> P["Softmax probabilities"]
         P -.-> SCORE["CP / APS scoring"]
     end
-    style BLOCK fill:#eef5ff,stroke:#64748b,color:#1e293b
+    style BLOCK fill:#fff1df,stroke:#b87928,color:#1e293b
+    classDef default fill:#ffffff,stroke:#64748b,color:#1e293b
+    classDef attention fill:#f0e9fa,stroke:#865bb0,color:#1e293b
+    class T,S attention
 ```
 
 </details>
