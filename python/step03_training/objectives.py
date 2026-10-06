@@ -5,7 +5,7 @@ from .contrastive import cross_domain_contrastive
 
 
 def joint_objective(model, z, time, stft, labels, domains, config,
-                         activity_optimizer=None, step=1, steps_per_epoch=1, *, task_difference=None, decoder=None):
+                         step=1, steps_per_epoch=1, *, background=None, task_difference=None, decoder=None):
     task_difference = task_difference or {"enabled": False, "weight": 0.0}
     task_diff_on = task_difference["enabled"] and task_difference["weight"] > 0
     decoder_on = decoder is not None and decoder.enabled and decoder.weight > 0
@@ -13,7 +13,7 @@ def joint_objective(model, z, time, stft, labels, domains, config,
     if not config.adversarial["enabled"] and not task_diff_on and not decoder_on and not any(
             term["enabled"] and term["weight"] > 0 for term in weighted_terms):
         return time.new_zeros(()), {}
-    b = model.encode_background(time, stft)
+    b = background if background is not None else model.encode_background(time, stft)
     loss = b.new_zeros(())
     metrics = {}
     if config.domain["enabled"]:
@@ -31,15 +31,6 @@ def joint_objective(model, z, time, stft, labels, domains, config,
         metrics.update(background_contrastive_loss=cl.item(), background_anchor_fraction=anchors / len(labels))
     if config.adversarial["enabled"]:
         head = model.background_activity_classifier
-        if activity_optimizer is None:
-            raise ValueError("Background activity adversary requires its independent optimizer")
-        for _ in range(config.adversarial["steps_per_batch"]):
-            activity_optimizer.zero_grad(set_to_none=True)
-            fit_loss = F.cross_entropy(head(b.detach(), labels=domains), labels)
-            if not torch.isfinite(fit_loss):
-                raise ValueError("Nonfinite background activity loss")
-            fit_loss.backward()
-            activity_optimizer.step()
         ramp = config.adversarial["warmup_epochs"] * steps_per_epoch
         weight = config.adversarial["max_weight"] * (min(1., (step - 1) / ramp) if ramp else 1.)
         head.requires_grad_(False)
@@ -82,23 +73,3 @@ def difference_loss(z, b):
     return (zc.T @ bc).square().mean()
 
 
-@torch.no_grad()
-def background_validation(model, time, stft, labels, domains):
-    """Evaluate saved background heads on a clean validation batch in eval mode."""
-    b = model.encode_background(time, stft)
-    result = {}
-    known = domains >= 0
-    if hasattr(model, "background_domain_classifier") and known.any():
-        logits = model.background_domain_classifier(b[known])
-        result["domain"] = (F.cross_entropy(logits, domains[known]).item(),
-                            (logits.argmax(1) == domains[known]).sum().item(), int(known.sum()))
-    if hasattr(model, "background_activity_classifier"):
-        head = model.background_activity_classifier
-        mask = known if head.condition_classes else torch.ones_like(known)
-        if mask.any():
-            logits = head(b[mask], labels=domains[mask])
-            result["activity"] = (F.cross_entropy(logits, labels[mask]).item(),
-                                  (logits.argmax(1) == labels[mask]).sum().item(), int(mask.sum()))
-    if any(not torch.isfinite(torch.tensor(values[0])) for values in result.values()):
-        raise ValueError("Nonfinite background validation loss")
-    return result

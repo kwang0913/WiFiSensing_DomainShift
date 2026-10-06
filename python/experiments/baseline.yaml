@@ -13,7 +13,7 @@ data:
 
 split:
   mode: domain_holdout       # holdout: source split by segment; random: split whole recordings
-  test_domains: [cong]       # Values of data.domain_key; all their segments go to test in holdout mode
+  test_domains: [kailong]       # Values of data.domain_key; all their segments go to test in holdout mode
   validation_fraction: 0.1 # Holdout: fraction of non-test source segments per class
   calibration_fraction: 0.2 # Same source denominator; random mode uses all recordings
   test_fraction: 0.2        # Random mode only; all split fractions then refer to recording counts
@@ -52,7 +52,7 @@ encoder_task:
 
 # Optional background branch; all child switches require enabled: true.
 encoder_background:
-  enabled: true
+  enabled: false
   domain:
     enabled: true
     weight: 1            # Background domain CE; updates only background encoder/head
@@ -80,7 +80,7 @@ encoder_background:
     # Both branches use centered, column-normalized cross-correlation; not independence.
 
 decoder:
-  enabled: true             # Effective only with encoder_background.enabled; shares main optimizer/scheduler
+  enabled: false             # Effective only with encoder_background.enabled; shares main optimizer/scheduler
   weight: 0.1            # Mean time/STFT relative MSE; updates both encoders and decoder
   # Targets augmented time and signed-log STFT inputs.
 
@@ -170,7 +170,7 @@ score:
 
 calibration:
   # alpha: 0.1             # Omitted: schema default 0.1; nominal coverage = 1 - alpha
-  weighted_cp: true        # true uses estimated density-ratio weights
+  weighted_cp: false        # true uses estimated density-ratio weights
 
 # For background target weighting: enable encoder_background before training, then set
 # calibration.weighted_cp: true and weighting.features: background.

@@ -202,7 +202,7 @@ Each experiment writes to `python/runs/<timestamp>/`:
 - Training: `experiment.json`, `best.pt`, `history.json`, and `training.png`.
 - Full evaluation: a `conformal-*` directory with embeddings, scorer/calibrator, predictions, metrics, and plots.
 
-The embedding-comparison cell jointly projects saved embeddings with t-SNE, colored by task label, domain, and split. Set `viz_dir` to inspect an existing result without retraining; `viz_max_per_split` limits plotting cost. It saves `embedding_tsne.png` and coordinates/labels/sample IDs in `embedding_tsne.npz`. In the same cell, Isomap, Spectral Embedding and metric MDS reuse the same samples/colors and save `embedding_isomap`, `embedding_spectral`, and `embedding_mds` PNG/NPZ files. Adjust `map_neighbors` for the graph methods; heed disconnected-graph warnings. Interpret each method according to its distance/neighborhood objective, not as proof of domain invariance.
+The embedding computation cell runs t-SNE and metric MDS by default, colored by task, domain and split. Set `viz_dir` to inspect an existing result without retraining; `viz_max_per_split` limits plotting cost. Each method saves its PNG and coordinates/labels/sample IDs NPZ. Isomap and Spectral Embedding are optional entries in that cell; graph-neighbor and method settings are directly editable there. Projection structure alone does not prove domain invariance.
 
 The manifest's `recordings` table and `splits` pairs preserve exact subset membership and order; `split_index_columns` defines the pair fields. Summaries report file/segment counts. `best.pt` supports inference with matching model code, not optimizer-state resume. Caches and outputs are excluded from Git.
 
@@ -235,10 +235,9 @@ Weighted runs save `target_features.npz` without task labels, `calibration_weigh
 counts. The CP bundle includes scorer, calibrator and ratio estimator. Failed notebook
 reruns invalidate downstream results before any work begins.
 
-Evaluation preserves historical train/validation/calibration/test membership and ignores
-any extra legacy split. Historical weighting selectors are removed with an explicit
-migration message; fresh weighted evaluations always use target inputs. Historical
-result directories are not rewritten. New YAML files reject removed selector keys.
+Evaluation requires current-format saved configuration and the exact four-way split
+manifest. Missing run settings, obsolete weighting selectors and extra legacy splits
+are rejected rather than migrated. Existing result directories are not rewritten.
 
 
 ## Architecture and direct softmax CP switches
@@ -469,11 +468,11 @@ If no objective supplies gradients, the main optimizer skips the batch update.
 the combined weighted training objective. Early stopping and checkpoint selection
 continue to use clean, unweighted validation CE.
 
-New manifests/checkpoints save `encoder_task`, `encoder_background`, and `decoder`;
-the manifest also records the shared `data.domain_key`. Historical
-YAML/metadata using top-level `contrastive`/`adversarial` or `disentanglement` is
-translated for compatibility. Ambiguous YAML containing both old and new forms of
-the same settings is rejected. Evaluation restores saved groups and never trains.
+Manifests/checkpoints save `encoder_task`, `encoder_background`, and `decoder`;
+the manifest also records the shared `data.domain_key`. Old top-level `seed`,
+`contrastive`, `adversarial`, and `disentanglement` YAML keys are rejected. Use
+`split_seed`/`training_seed` and the encoder groups. Evaluation requires the
+current saved groups and never trains.
 
 `encoder_background.adversarial.conditional` independently controls whether the
 background activity adversary receives the true training-domain one-hot alongside b.
@@ -523,3 +522,49 @@ training setup to train again; this cleanup does not provide optimizer-state res
 training batches or exported sample order. Evaluation uses the current baseline's
 inference budget, with optional `evaluation_config_path` overrides, rather than the
 historical run's memory budget. Each new CP result records `inference.batch_size`.
+
+
+## Shared notebook evaluation and APS
+
+Both notebooks use `step01_preprocessing/dataset.py` for paired memory-mapped data.
+`evaluation_pipeline.py` owns a `ConformalEvaluation` session with explicit
+`export`, `fit_score`, `calibrate`, `predict`, and `save_results` stages. The notebook
+keeps these stages visible. Recreate the session after changing its configuration;
+rerunning an upstream stage invalidates downstream completion flags, including saved
+results. Saving, plotting and logging reject changed post-calibration settings rather
+than mixing old predictions with new metadata. NN training
+remains in run.ipynb; evaluate.ipynb restores frozen weights only.
+
+Each split is exported once per session export with `inference.batch_size`, including
+the final partial batch. Weight estimation and prediction reuse cached target features.
+Only source/calibration labels enter calibration or ratio fitting; target labels enter
+metrics only. Exports occupy CPU RAM. The model smoke check also bounds its device
+batch by `inference.batch_size`.
+
+Randomized APS now runs in the regular evaluation, alongside the configured score.
+Unweighted APS always runs; weighted APS reuses exactly the ordinary CP weights when
+enabled. `aps_seed` defaults to 42 and is saved in config.json. Evaluation restores the saved
+seed; an evaluation YAML can explicitly override it. Changing the seed requires
+recalibration.
+Independent calibration/test random streams provide one uniform draw per sample,
+shared across candidate classes and held fixed across all alphas. No forced nonempty
+sets are added. `metrics.json` includes the per-method alpha sweeps; `aps_predictions.npz`
+saves scores, uniforms and p-values. `coverage_set_size.png` compares these methods
+with nominal coverage and a horizontal NN accuracy line, using the former APS plot
+style. This remains empirical evaluation under domain shift.
+
+Plotting code lives directly in both notebooks for interactive styling. Embedding visualization
+uses three cells: load/sample with the shared `projections.load_projection_data` helper,
+compute/save coordinates, and plot/save images. Rerunning the plot cell reuses coordinates
+without fitting t-SNE/MDS again. Optional W&B logging uses a shared evaluation helper. Logging initialization
+or upload errors warn without discarding local results. Active background heads print
+validation loss, accuracy and sample count after each training epoch.
+
+
+Module boundaries: `evaluation_pipeline.py` coordinates the post-training stages;
+`step07_evaluation/metrics.py` summarizes arrays, `artifacts.py` writes result files,
+and `diagnostics.py` evaluates saved background heads. Weight fitting and weighted
+calibration live in `step05_calibration/weighted.py`. Training calls
+`step03_training/adversarial.py` explicitly before computing losses in `objectives.py`;
+`validation.py` contains read-only background validation. Evaluation settings share
+one parser; `alpha_grid` must be nonempty and contain values strictly between 0 and 1.

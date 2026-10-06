@@ -1,40 +1,6 @@
-"""Read-only background exports, preserving loader order and module modes."""
+"""Read-only representation and saved-head diagnostics."""
 import numpy as np
 import torch
-
-
-def feature_representations(model, batches, microbatch_size=4, features="background"):
-    if features not in ("task", "background"):
-        raise ValueError("Expected task or background features")
-    if features == "background" and not hasattr(model, "encode_background"):
-        raise ValueError("Background weighting requires a saved disentangled model")
-    if type(microbatch_size) is not int or microbatch_size < 1:
-        raise ValueError("microbatch_size must be a positive integer")
-    modes = [(module, module.training) for module in model.modules()]
-    device = next(model.parameters()).device
-    result = []
-    try:
-        model.eval()
-        with torch.inference_mode():
-            for batch in batches:
-                time, stft = batch[:2]  # Labels deliberately not inspected.
-                for start in range(0, len(time), microbatch_size):
-                    encode = model.encode_background if features == "background" else model.encode
-                    b = encode(time[start:start+microbatch_size].to(device),
-                                                stft[start:start+microbatch_size].to(device))
-                    if not torch.isfinite(b).all():
-                        raise ValueError("Nonfinite weighting representation")
-                    result.append(b.cpu().numpy())
-    finally:
-        for module, training in modes:
-            module.training = training
-    if not result:
-        raise ValueError("Empty weighting feature export")
-    return np.concatenate(result)
-
-
-def background_representations(model, batches, microbatch_size=4):
-    return feature_representations(model, batches, microbatch_size, features="background")
 
 
 def background_diagnostics(model, exported, domain_targets=None):

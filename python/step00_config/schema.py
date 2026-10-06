@@ -92,6 +92,12 @@ class CalibrationConfig:
     alpha: float = 0.1
     weighted_cp: bool = False
 
+    def __post_init__(self):
+        if not 0 < self.alpha < 1:
+            raise ValueError("calibration.alpha must be between 0 and 1")
+        if not isinstance(self.weighted_cp, bool):
+            raise ValueError("calibration.weighted_cp must be boolean")
+
 
 @dataclass
 class WeightingConfig:
@@ -277,11 +283,6 @@ class EncoderTaskConfig:
         self.contrastive = asdict(ContrastiveConfig(**self.contrastive))
         self.adversarial = asdict(AdversarialConfig(**self.adversarial))
 
-    @classmethod
-    def from_saved(cls, record):
-        if "encoder_task" in record:
-            return cls(**record["encoder_task"])
-        return cls(contrastive=record.get("contrastive", {}), adversarial=record.get("adversarial", {}))
 
 
 @dataclass

@@ -12,7 +12,7 @@ TRAINING_OBJECTS = (
 TRAINING_TENSORS = (
     "time", "stft", "labels", "logits", "embedding", "task_loss", "loss",
     "domain_labels", "fit_logits", "fit_loss", "domain_logits", "domain_loss",
-    "background_loss", "contrastive_loss", "known",
+    "background_embedding", "background_loss", "contrastive_loss", "known",
 )
 
 
