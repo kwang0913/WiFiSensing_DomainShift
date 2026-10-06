@@ -89,7 +89,7 @@ class LinkBranch(nn.Module):
         super().__init__()
         self.node_encoder = TimeLinkEncoder(1) if bins is None else STFTLinkEncoder(1, bins)
         self.edge_encoder = TimeLinkEncoder(2) if bins is None else STFTLinkEncoder(2, bins)
-        self.graph = nn.ModuleList([RxMessagePassing(), RxMessagePassing()])
+        self.graph = RxMessagePassing()
         self.rx_fusion = mlp(384, 128)
         self.tx_fusion = mlp(384, 128)
         self.temporal = nn.Sequential(Residual(128), nn.AdaptiveAvgPool1d(1), nn.Flatten())
@@ -108,8 +108,7 @@ class LinkBranch(nn.Module):
         # [batch, time position, Tx, Rx/pair, channel]
         nodes = self.node_encoder(nodes).reshape(b, 3, 3, 64, 8).permute(0, 4, 1, 2, 3)
         edges = self.edge_encoder(edges).reshape(b, 3, 3, 64, 8).permute(0, 4, 1, 2, 3)
-        for layer in self.graph:
-            nodes, edges = layer(nodes, edges)
+        nodes, edges = self.graph(nodes, edges)
         tx = self.rx_fusion(torch.cat((nodes, edges), -2).flatten(-2))
         fused = self.tx_fusion(tx.flatten(-2))
         return self.temporal(fused.transpose(1, 2))

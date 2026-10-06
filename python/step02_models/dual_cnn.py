@@ -14,8 +14,9 @@ class DualCNN(PairedModel):
     def __init__(self, classes, embedding_dim=32, stft_frequency_bins=32):
         super().__init__(classes, embedding_dim, stft_frequency_bins)
         self.time_encoder = nn.Sequential(
-            # Collapse all 270 feature rows; subsequent convolutions slide in time.
-            conv_block(3, 32, (270, 24), (1, 24)),
+            # Fuse CSI features first, then learn temporal patterns at reduced width.
+            conv_block(3, 32, (270, 1)),
+            conv_block(32, 32, (1, 24), (1, 24)),
             conv_block(32, 64, (1, 4), (1, 2)),
             nn.AdaptiveAvgPool2d((1, 4)),
             nn.Flatten(),
