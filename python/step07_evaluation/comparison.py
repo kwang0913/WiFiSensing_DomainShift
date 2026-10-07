@@ -37,10 +37,13 @@ def load_result(directory):
         ids = list(zip(arrays["recording"].tolist(), arrays["segment_index"].tolist()))
         nn_accuracy = float(np.mean(arrays["probabilities"].argmax(1) == labels))
     classes = config["class_names"]
+    if not len(labels) or len(ids) != len(labels):
+        raise ValueError(f"Missing or misaligned target rows: {directory}")
     for method, p_values in method_p_values.items():
-        if p_values.shape != (len(labels), len(classes)) or not np.isfinite(p_values).all():
+        if (p_values.shape != (len(labels), len(classes)) or not np.isfinite(p_values).all()
+                or np.any((p_values < 0) | (p_values > 1))):
             raise ValueError(f"Invalid saved p-values for {method}: {directory}")
-    return dict(directory=directory, config=config, metrics=metrics, rows=metrics["methods"],
+    return dict(directory=directory, config=config, method_results=metrics["methods"],
                 history=json.loads((directory.parent / "history.json").read_text()),
                 labels=labels, ids=ids, class_names=classes, method_p_values=method_p_values, nn_accuracy=nn_accuracy)
 

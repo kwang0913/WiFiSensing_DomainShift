@@ -18,7 +18,7 @@ python python/run_experiment.py --config python/experiments/baseline.yaml
 | [evaluate.ipynb](evaluate.ipynb) | Compare selected runs; optionally reevaluate frozen weights without training |
 | [run_experiment.py](run_experiment.py) | Execute the complete run notebook through Papermill |
 
-For interactive training, select the kernel, set `config_path` in the first cell, and run in order. For comparison, edit `selected_runs` in `evaluate.ipynb`: each selected run adds CP/APS curves and one t-SNE row (task, domain, and split); colors distinguish runs and line styles distinguish methods. Saved results are reused by default. Set `recompute=True` to reevaluate checkpoints sequentially; `evaluation_config_path` optionally overrides evaluation settings. Restart the kernel after changing model code.
+For interactive training, select the kernel, set `config_path` in the first cell, and run in order. For comparison, edit `selected_runs` in `evaluate.ipynb`: each selected run adds CP/APS curves and one t-SNE row (task, domain, and split); colors distinguish runs and line styles distinguish methods. Saved results are reused by default. Set `recompute=True` to reevaluate checkpoints sequentially; `evaluation_config_path` optionally overrides evaluation settings. Restart the kernel after updating Python modules.
 
 The CLI accepts `--kernel NAME` and `--output-dir NEW_PATH`. Use `--skip-plots` to skip plots, projections, and evaluation image logging while retaining numeric results and embeddings. Cluster instructions are in the [Slurm guide](slurm/README.md).
 
@@ -48,6 +48,8 @@ Validation selects the checkpoint; calibration uses a separate split. Target lab
 | `step06_prediction/` | Representation export and prediction sets |
 | `step07_evaluation/` | Metrics, diagnostics, saved results, and projection data |
 | [evaluation_pipeline.py](evaluation_pipeline.py) | Shared export → score fitting → calibration → prediction → saving workflow |
+
+Saved-result loading and comparison checks live in `step07_evaluation/comparison.py`; frozen checkpoint/data restoration lives in `restoration.py`, and projection data preparation in `projections.py`.
 
 The training loop stays in `run.ipynb`; plotting stays in both notebooks for interactive adjustment. Rerun loading after changing the comparison selection; plot styling can be edited without recomputing t-SNE.
 

@@ -24,17 +24,20 @@ def restore_datasets(experiment, npy_root):
         raise ValueError("Expected current four-way split manifest")
     split_samples = {k: np.asarray(experiment["splits"][k], dtype=np.int64).reshape(-1, 2)
                      for k in ("train", "validation", "calibration", "test")}
+    checked_recordings = set()
     for name, pairs in split_samples.items():
         if not len(pairs):
             raise ValueError(f"Empty saved split: {name}")
         if (pairs < 0).any() or (pairs[:, 0] >= len(recordings)).any():
             raise ValueError(f"Invalid saved indices: {name}")
         for i in np.unique(pairs[:, 0]):
-            for path, shape in ((files[i], time_shape), (stft_files[i], stft_shape)):
-                a = np.load(path, mmap_mode="r", allow_pickle=False)
-                if list(a.shape) != [recordings[i]["segments"], *shape] or a.dtype != np.float32:
-                    raise ValueError(f"Cache shape/dtype differs from saved run: {path}")
-                del a
+            if i not in checked_recordings:
+                for path, shape in ((files[i], time_shape), (stft_files[i], stft_shape)):
+                    array = np.load(path, mmap_mode="r", allow_pickle=False)
+                    if list(array.shape) != [recordings[i]["segments"], *shape] or array.dtype != np.float32:
+                        raise ValueError(f"Cache shape/dtype differs from saved run: {path}")
+                    del array
+                checked_recordings.add(i)
             if pairs[pairs[:, 0] == i, 1].max() >= recordings[i]["segments"]:
                 raise ValueError(f"Segment outside saved recording: {name}, {i}")
 
@@ -61,10 +64,11 @@ def restore_model(experiment, checkpoint_path, device):
     if asdict(checkpoint_decoder) != asdict(decoder_config):
         raise ValueError("Checkpoint decoder differs from experiment manifest")
     model = build_model(model_config, time_shape, stft_shape, len(class_names), training_seed,
-                          domain_classes=len(domain_names) if adversarial_config.enabled else 0,
-                          domain_hidden_dim=adversarial_config.hidden_dim,
-                          domain_conditional=adversarial_config.conditional,
-                          encoder_background=encoder_background_config, background_domains=len(domain_names), decoder=decoder_config)
+                        domain_classes=len(domain_names) if adversarial_config.enabled else 0,
+                        domain_hidden_dim=adversarial_config.hidden_dim,
+                        domain_conditional=adversarial_config.conditional,
+                        encoder_background=encoder_background_config,
+                        background_domains=len(domain_names), decoder=decoder_config)
     model.load_state_dict(selected_checkpoint["model_state_dict"], strict=True)
     model = model.to(device).eval()
     return model
