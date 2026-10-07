@@ -117,8 +117,8 @@ training:
   # Keep learning_rate and weight_decay above; do not repeat lr/weight_decay here.
   # When editing this file, replace kwargs too when changing optimizer.
   optimizer_kwargs: {momentum: 0.9, nesterov: true}
-  patience: null            # null: all epochs; otherwise stop after this many unimproved validation epochs
-  min_delta: 0.0            # Minimum clean task-CE improvement to reset patience; best.pt uses lowest CE
+  patience: 10            # null: all epochs; otherwise stop after this many unimproved validation epochs
+  min_delta: 1.0e-3            # Minimum clean task-CE improvement to reset patience; best.pt uses lowest CE
   scheduler:
     name: cosine              # none / cosine / plateau; main optimizer scheduler, updated once per epoch
     # none:    {}

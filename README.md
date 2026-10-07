@@ -21,7 +21,7 @@ The earlier [SenSys framework](https://www.winlab.rutgers.edu/~yychen/daisylab/p
 
 ## Network architecture
 
-The task model uses [CNNTransformer](python/step02_models/cnn_transformer.py) with separate time and STFT encoders, followed by feature fusion and classification.
+The task model uses [CNNTransformer](python/step02_models/cnn_transformer.py): a CNN stem followed by **a temporal Transformer for time-domain CSI**, and **a ViT-style patch Transformer for channel-fused STFT features**. Both branches use positional encoding and self-attention before feature fusion and classification.
 
 ```mermaid
 flowchart LR
@@ -156,24 +156,33 @@ The two Transformer stacks have independent weights. Adversarial and contrastive
 
 ## Results
 
+Four CNNTransformer setups share the same held-out user and data split: Plain, domain-adversarial training (DA), contrastive learning (CL), and DA + CL. These results use one training seed and unweighted calibration.
+
 ### Training loss and accuracy
 
-Report training and validation curves, mark the selected checkpoint, and evaluate target-domain accuracy separately.
+Training and validation task loss and accuracy; dots mark the selected checkpoints.
+
+![Training and validation loss and accuracy for four setups](assets/figures/training_comparison.png)
 
 ### Representation visualization and ablations
 
-Compare task separation and domain mixing under four settings:
+Each row shows one setup, colored by activity, user, and data split. User identities are anonymized; **OOD user** denotes the held-out target user. Each row reuses the same t-SNE coordinates across its three panels.
 
-- Neither domain-adversarial training nor contrastive learning.
-- Domain-adversarial training only.
-- Contrastive learning only.
-- Both objectives enabled.
+![Four setups with activity, anonymous user, and split coloring](assets/figures/tsne_comparison.png)
 
 Embedding visualizations complement held-out-domain metrics; visual mixing alone does not establish domain invariance.
 
 ### Prediction-set coverage and size
 
-Compare softmax-based CP and APS across `alpha`, including weighted variants when enabled. Report coverage, mean set size, and empty/singleton-set fractions, with neural-network accuracy as a horizontal reference.
+Softmax CP and randomized APS coverage and mean set size across `alpha`, with NN accuracy as a horizontal reference. Both methods are unweighted in these runs.
+
+![Softmax CP and APS coverage and mean prediction-set size](assets/figures/coverage_set_size.png)
+
+Set-size distributions at `alpha = 0.1`, including empty sets (size 0). Each setup is normalized separately.
+
+![Softmax CP and APS prediction-set size histograms](assets/figures/set_size_distribution.png)
+
+Compared with softmax CP, APS substantially reduces empty predictions, producing mostly singleton sets while improving empirical coverage.
 
 ## Workflow
 

@@ -15,12 +15,12 @@ python python/run_experiment.py --config python/experiments/baseline.yaml
 | Entry point | Purpose |
 |---|---|
 | [run.ipynb](run.ipynb) | Prepare data, train, select a checkpoint, calibrate, and evaluate |
-| [evaluate.ipynb](evaluate.ipynb) | Load a saved run and evaluate frozen weights without training |
+| [evaluate.ipynb](evaluate.ipynb) | Compare selected runs; optionally reevaluate frozen weights without training |
 | [run_experiment.py](run_experiment.py) | Execute the complete run notebook through Papermill |
 
-For interactive training, select the kernel, set `config_path` in the first cell, and run in order. For evaluation, set `run_path`; use `evaluation_config_path` for evaluation overrides. Restart the kernel when changing runs or model code.
+For interactive training, select the kernel, set `config_path` in the first cell, and run in order. For comparison, edit `selected_runs` in `evaluate.ipynb`: each selected run adds CP/APS curves and one t-SNE row (task, domain, and split); colors distinguish runs and line styles distinguish methods. Saved results are reused by default. Set `recompute=True` to reevaluate checkpoints sequentially; `evaluation_config_path` optionally overrides evaluation settings. Restart the kernel after changing model code.
 
-The CLI accepts `--kernel NAME` and `--output-dir NEW_PATH`. Cluster instructions are in the [Slurm guide](slurm/README.md).
+The CLI accepts `--kernel NAME` and `--output-dir NEW_PATH`. Use `--skip-plots` to skip plots, projections, and evaluation image logging while retaining numeric results and embeddings. Cluster instructions are in the [Slurm guide](slurm/README.md).
 
 ## Configuration and data
 
@@ -49,7 +49,7 @@ Validation selects the checkpoint; calibration uses a separate split. Target lab
 | `step07_evaluation/` | Metrics, diagnostics, saved results, and projection data |
 | [evaluation_pipeline.py](evaluation_pipeline.py) | Shared export → score fitting → calibration → prediction → saving workflow |
 
-The training loop stays in `run.ipynb`; plotting stays in both notebooks for interactive adjustment. Changing evaluation settings requires recreating the evaluation session and rerunning its stages.
+The training loop stays in `run.ipynb`; plotting stays in both notebooks for interactive adjustment. Rerun loading after changing the comparison selection; plot styling can be edited without recomputing t-SNE.
 
 ## Saved results
 
@@ -62,4 +62,4 @@ Each experiment writes to `python/runs/<timestamp>/` unless another output direc
 | `run.ipynb`, `execution.json` | Executed notebook and status for CLI runs |
 | `conformal-*/` | Evaluation settings, scorer/calibrators, exported embeddings, CP/APS predictions, metrics, and plots |
 
-Weighted runs also save weights and estimation diagnostics. Evaluation creates a new result directory. Checkpoints require matching model code and support inference, not optimizer-state resume. Data caches and generated results are excluded from Git.
+Weighted runs also save weights and estimation diagnostics. Reevaluation creates a new conformal result directory; comparison plots and selection provenance are saved separately under `python/comparisons/`. Checkpoints require matching model code and support inference, not optimizer-state resume. Data caches and generated results are excluded from Git.

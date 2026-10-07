@@ -14,9 +14,13 @@ from step00_config.loader import BASELINE, load_config
 PYTHON_ROOT = Path(__file__).resolve().parent
 
 
-def run_experiment(config_path=BASELINE, output_dir=None, kernel="wifi-cp"):
+def run_experiment(config_path=BASELINE, output_dir=None, kernel="wifi-cp", skip_plots=False):
     config = load_config(config_path)
     notebook = nbformat.read(PYTHON_ROOT / "run.ipynb", as_version=4)
+    if skip_plots:
+        plot_cells = {"plot-training", "step08-plot", "step08-wandb",
+                      "manifold-plots", "projection-compute", "projection-plot"}
+        notebook.cells = [cell for cell in notebook.cells if cell.get("id") not in plot_cells]
     for cell in notebook.cells:
         if cell.cell_type == "code":
             cell.outputs = []
@@ -30,7 +34,7 @@ def run_experiment(config_path=BASELINE, output_dir=None, kernel="wifi-cp"):
     # Execute a copy: the source notebook is never overwritten.
     notebook_path = run_dir / "run.ipynb"
     nbformat.write(notebook, notebook_path)
-    status = {"status": "running", "kernel": kernel,
+    status = {"status": "running", "kernel": kernel, "skip_plots": skip_plots,
               "started_at": datetime.now(timezone.utc).isoformat(),
               "source_config": str(Path(config_path).expanduser().resolve())}
     status_path = run_dir / "execution.json"
@@ -62,5 +66,7 @@ if __name__ == "__main__":
     parser.add_argument("--config", type=Path, default=BASELINE, help="Experiment YAML file")
     parser.add_argument("--output-dir", type=Path, help="New experiment directory; must not exist")
     parser.add_argument("--kernel", default="wifi-cp", help="Installed Jupyter kernel name")
+    parser.add_argument("--skip-plots", action="store_true",
+                        help="Skip plots, projections and evaluation image logging; retain all numeric results")
     args = parser.parse_args()
-    run_experiment(args.config, args.output_dir, args.kernel)
+    run_experiment(args.config, args.output_dir, args.kernel, args.skip_plots)

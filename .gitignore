@@ -59,6 +59,7 @@ Thumbs.db
 
 # Training outputs
 /python/runs/
+/python/comparisons/
 
 matlab/Data Analysis/
 refs/

@@ -5,7 +5,7 @@ from pathlib import Path
 import yaml
 
 from .schema import (ModelConfig, EncoderBackgroundConfig, EncoderTaskConfig,
-                     DecoderConfig, TrainingConfig)
+                     DecoderConfig, TrainingConfig, CalibrationConfig)
 from .evaluation import SCORE_CONFIGS, parse_evaluation_settings
 
 BASELINE = Path(__file__).resolve().parents[1] / "experiments/baseline.yaml"
@@ -34,6 +34,8 @@ def _merge(base, overrides, section="experiment"):
 
 def load_config(path=None):
     config = yaml.safe_load(BASELINE.read_text())
+    # Schema-default calibration fields must also be accepted in override YAML.
+    config["calibration"] = asdict(CalibrationConfig(**config.get("calibration", {})))
     overrides = yaml.safe_load(Path(path).expanduser().read_text()) if path else {}
     if not isinstance(overrides, dict):
         raise ValueError("Experiment YAML must contain a mapping of settings")
