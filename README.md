@@ -7,12 +7,14 @@ This project studies domain shift in WiFi sensing by combining learned CSI repre
 
 Domain shift occurs when the data distribution changes between training and deployment. In WiFi sensing, different users, locations, room layouts, or device placements can alter CSI measurements and reduce classification accuracy.
 
-Conformal prediction constructs candidate-label sets with finite-sample marginal coverage of at least `1 − alpha` under exchangeability of calibration and test examples. This distribution-free guarantee does not extend to arbitrary domain shift. We study how to maintain coverage with compact prediction sets on unseen domains.
+Conformal prediction constructs candidate-label sets with finite-sample marginal coverage of at least `1 − alpha` under exchangeability of calibration and test examples. This distribution-free guarantee does not extend to arbitrary domain shift. We study how to maintain coverage on unseen domains while reducing empty prediction sets and favoring singleton predictions.
 
 The earlier [SenSys framework](https://www.winlab.rutgers.edu/~yychen/daisylab/papers/Solving%20the%20WiFi%20Sensing%20Dilemma%20in%20Reality%20Leveraging%20Conformal%20Prediction.pdf) combines learned CSI representations, KDE-based nonconformity measures, and fusion of conformity information across training domains. It reports empirical improvements in activity recognition, gesture recognition, and user identification under domain variations.
 
 ## Contribution of this repository
 
+- Fuse a **CNN–temporal Transformer** branch for time-domain CSI with a **ViT-style patch Transformer** for STFT features, capturing temporal and time–frequency dependencies.
+- Evaluate on a newly collected [crossroom CSI dataset](data/README.md) with **125 recordings** comprising **4,273 extracted segments** from **10 users** performing **5 activities**.
 - Combine domain-adversarial training and supervised contrastive learning to encourage consistent, task-discriminative representations across domains, with independent switches for ablation.
 - Use segment-level training and calibration to obtain more calibration scores, improving empirical quantile resolution and mitigating abrupt changes in prediction sets caused by limited calibration samples.
 - Construct scores directly from softmax probabilities, avoiding a separately fitted scorer. KDE, SVM, and histogram-based gradient boosting remain optional comparisons.
