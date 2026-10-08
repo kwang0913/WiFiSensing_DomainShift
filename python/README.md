@@ -18,9 +18,9 @@ python python/run_experiment.py --config python/experiments/baseline.yaml
 | [evaluate.ipynb](evaluate.ipynb) | Compare selected runs; optionally reevaluate frozen weights without training |
 | [run_experiment.py](run_experiment.py) | Execute the complete run notebook through Papermill |
 
-For interactive training, select the kernel, set `config_path` in the first cell, and run in order. For comparison, edit `selected_runs` in `evaluate.ipynb`: each selected run adds CP/APS curves and one t-SNE row (task, domain, and split); colors/markers distinguish setups (Plain, DA, CL, DA + CL), while line styles distinguish CP, APS, and NN references. Saved results are reused by default. Set `recompute=True` to reevaluate checkpoints sequentially; `evaluation_config_path` optionally overrides evaluation settings. Restart the kernel after updating Python modules.
+For interactive training, select the kernel, set `config_path` in the first cell, and run in order. For comparison, edit `selected_runs` in `evaluate.ipynb`: each selected run adds CP/APS curves and one t-SNE row (task, domain, and split); colors/markers distinguish setups (Plain, DA, CL, DA + CL), while line styles distinguish CP, APS, and NN references. Set `recompute=False` to reuse saved results, or `recompute=True` to reevaluate checkpoints sequentially; `evaluation_config_path` optionally overrides evaluation settings. Restart the kernel after updating Python modules.
 
-The CLI accepts `--kernel NAME` and `--output-dir NEW_PATH`. Use `--skip-plots` to skip plots, projections, and evaluation image logging while retaining numeric results and embeddings. Cluster instructions are in the [Slurm guide](slurm/README.md).
+The CLI accepts `--kernel NAME` and `--output-dir NEW_PATH`. Use `--skip-plots` to skip plots, projections, and evaluation image logging while retaining numeric results and embeddings.
 
 ## Configuration and data
 

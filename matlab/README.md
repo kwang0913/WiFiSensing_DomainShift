@@ -1,6 +1,6 @@
 # MATLAB feature extraction
 
-Decode Intel CSI recordings, align packets, and extract paired time-domain/STFT segments. Source DAT files are available for crossroom; dataset labels and array formats are in the [data guide](../data/README.md).
+Decode Intel CSI recordings, align packets, and extract paired time-domain/STFT segments. Supply source DAT files locally; dataset labels and array formats are in the [data guide](../data/README.md).
 
 ## Setup and run
 
@@ -59,4 +59,4 @@ Each `*_raw.mat` contains `segment_data`, `segment_data_stft`, and `extraction_i
 
 STFT magnitudes are cropped from the continuous spectrogram and flattened with MATLAB `piece(:)`, frequency first. The 21/65-frame windows span approximately 2.75/4.093 seconds, respectively. See the [data guide](../data/README.md) for shapes and reshaping.
 
-Malformed or truncated DAT tails retain complete preceding packets; inspect warnings and decoding metadata. Blocks without usable signal produce no segments. `Data Analysis/` contains optional scripts with their own paths and dependencies.
+Malformed or truncated DAT tails retain complete preceding packets; inspect warnings and decoding metadata. Blocks without usable signal produce no segments.

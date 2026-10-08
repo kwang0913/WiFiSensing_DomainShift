@@ -23,7 +23,7 @@ The earlier [SenSys framework](https://www.winlab.rutgers.edu/~yychen/daisylab/p
 
 ## Network architecture
 
-The task model uses [CNNTransformer](python/step02_models/cnn_transformer.py): a CNN stem followed by **a temporal Transformer for time-domain CSI**, and **a ViT-style patch Transformer for channel-fused STFT features**. Both branches use positional encoding and self-attention before feature fusion and classification. The diagram uses the current baseline’s 64-dimensional embedding; `model.embedding_dim` is configurable.
+The task model uses [CNNTransformer](python/step02_models/cnn_transformer.py): a CNN stem followed by **a temporal Transformer for time-domain CSI**, and **a ViT-style patch Transformer for channel-fused STFT features**. Both branches use positional encoding and self-attention before feature fusion and classification. The diagram uses the current baseline’s 64-dimensional embedding.
 
 ```mermaid
 flowchart LR
@@ -161,11 +161,11 @@ The two Transformer stacks have independent weights.
 
 ## Results
 
-Four CNNTransformer setups share the same held-out user and data split: Plain, domain-adversarial training (DA), contrastive learning (CL), and DA + CL. These results use one training seed and unweighted calibration.
+Four CNNTransformer setups share the same held-out user and data split: baseline (Plain), domain-adversarial training (DA), contrastive learning (CL), and DA + CL. These results use one training seed and unweighted calibration, with 730 calibration segments and 537 test segments.
 
 ### Training loss and accuracy
 
-Training and validation task loss and accuracy; dots mark the selected checkpoints.
+Training and validation task loss and accuracy; dots mark the validation-selected best epochs.
 
 ![Training and validation loss and accuracy for four setups](assets/figures/training_comparison.png)
 
@@ -175,7 +175,7 @@ Each row shows one setup, colored by activity, user, and data split. User identi
 
 ![Four setups with activity, anonymous user, and split coloring](assets/figures/tsne_comparison.png)
 
-Embedding visualizations complement held-out-domain metrics; visual mixing alone does not establish domain invariance.
+Embedding visualizations show how each training objective shapes activity clusters and the placement of held-out-user samples, complementing the quantitative results below.
 
 ### Prediction-set coverage and size
 
@@ -187,7 +187,13 @@ Set-size distributions at `alpha = 0.1`, including empty sets (size 0). Each set
 
 ![Softmax CP and APS prediction-set size histograms](assets/figures/set_size_distribution.png)
 
-Compared with softmax CP, APS substantially reduces empty predictions, producing mostly singleton sets while improving empirical coverage.
+**CP exposes domain mismatch beyond top-1 accuracy.** At `alpha = 0.1`, softmax CP produces only empty or singleton sets, making the mismatch between source-calibrated confidence thresholds and target-domain predictions visible. For the baseline, the calibrated probability threshold is approximately 0.978, while the mean maximum predicted probability falls from 0.987 on calibration segments to 0.893 on the held-out user. Empty sets identify inputs for which no class meets the source-calibrated threshold, providing a useful diagnostic of domain shift.
+
+- **Segment-level calibration improves resolution.** The 730 calibration segments provide a conformal rank resolution of approximately `1 / 731 = 0.14%`, mitigating the coarse thresholds caused by very small calibration samples and enabling a detailed view of prediction-set behavior under domain shift.
+- **A strong baseline from segment-level learning.** With 2,657 training segments, the plain model achieves the highest held-out-user classification accuracy among the four setups (67.4%). This suggests that the richer segment-level training sample pool can already support a competitive baseline without auxiliary objectives.
+- **DA reduces empty softmax CP predictions.** Relative to the baseline, DA lowers the empty-set rate from 53.4% to 39.9% and raises coverage from 39.5% to 43.4%, with a tradeoff in top-1 accuracy (67.4% to 56.1%).
+- **CL favors singleton APS predictions.** Adding CL to the baseline reduces two-label sets from 18.1% to 13.2% and increases singleton sets from 72.4% to 77.3%. Adding CL to DA shows the same pattern: two-label sets fall from 19.2% to 12.8%, while singletons rise from 71.7% to 76.7%.
+- **APS substantially reduces empty predictions.** Across all four setups, APS lowers empty-set rates from 39.9–57.9% with softmax CP to 7.8–9.1%, while improving empirical coverage. The coverage curves show the remaining gap to the nominal target.
 
 ## Workflow
 

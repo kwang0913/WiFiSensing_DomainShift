@@ -6,6 +6,7 @@ from sklearn.calibration import CalibratedClassifierCV
 from sklearn.model_selection import StratifiedKFold
 from sklearn.ensemble import HistGradientBoostingClassifier
 
+
 class SoftmaxScorer:
     """No fitted intermediate model: input is frozen task softmax probabilities."""
     input_key = "probabilities"
@@ -40,6 +41,7 @@ class KDEScorer:
     def score(self, x):
         return -np.column_stack([model.score_samples(x) for model in self.models])
 
+
 class MarginScorer:
     input_key = "embeddings"
     def __init__(self, estimator):
@@ -72,7 +74,7 @@ def build_scorer(config, classes, seed=42):
     if isinstance(config, SVMConfig):
         svm = SVC(C=config.C, kernel=config.kernel, gamma=config.gamma,
                   break_ties=True, decision_function_shape="ovr")
-        # Probability calibration stays inside training; Step 06 uses a separate split.
+        # Probability calibration stays inside training; conformal calibration is separate.
         cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)
         return MarginScorer(CalibratedClassifierCV(
             svm, method="sigmoid", cv=cv, ensemble=False))

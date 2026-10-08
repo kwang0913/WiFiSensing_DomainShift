@@ -1,6 +1,7 @@
 """Finite-sample rank calibration, separate from fitting score models."""
 import numpy as np
 
+
 class RankCalibrator:
     def fit(self, scores, labels):
         scores, labels = np.asarray(scores), np.asarray(labels)
@@ -15,12 +16,15 @@ class RankCalibrator:
         self.reference = np.sort(truth)
         return self
 
-    def p_values(self, scores):
+    def _rank_indices(self, scores):
         scores = np.asarray(scores)
         if scores.ndim != 2 or scores.shape[1] != self.classes or np.isnan(scores).any():
             raise ValueError("Invalid candidate score matrix")
+        return np.searchsorted(self.reference, scores, side="left")
+
+    def p_values(self, scores):
         # Include ties; higher nonconformity means a smaller p-value.
-        greater_equal = len(self.reference) - np.searchsorted(self.reference, scores, side="left")
+        greater_equal = len(self.reference) - self._rank_indices(scores)
         return (1 + greater_equal) / (len(self.reference) + 1)
 
 
@@ -50,11 +54,8 @@ class WeightedRankCalibrator(RankCalibrator):
         return self
 
     def p_values(self, scores, weights):
-        scores = np.asarray(scores)
-        if scores.ndim != 2 or scores.shape[1] != self.classes or np.isnan(scores).any():
-            raise ValueError("Invalid candidate score matrix")
-        weights = self._weights(weights, len(scores))
-        index = np.searchsorted(self.reference, scores, side="left")
+        index = self._rank_indices(scores)
+        weights = self._weights(weights, len(index))
         tail = self.tail_weights
         weights = weights[:, None]
         # Rescale before adding to avoid overflow for large candidate weights.

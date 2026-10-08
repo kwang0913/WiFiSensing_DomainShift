@@ -5,7 +5,7 @@ from pathlib import Path
 import yaml
 
 from .schema import (ModelConfig, EncoderBackgroundConfig, EncoderTaskConfig,
-                     DecoderConfig, TrainingConfig, CalibrationConfig, SplitConfig)
+                     DecoderConfig, TrainingConfig, CalibrationConfig, SplitConfig, SamplingConfig)
 from .evaluation import SCORE_CONFIGS, parse_evaluation_settings
 
 BASELINE = Path(__file__).resolve().parents[1] / "experiments/baseline.yaml"
@@ -51,6 +51,7 @@ def load_config(path=None):
         raise ValueError("data.datasets must be a nonempty list of cache directories")
     SplitConfig(**config["split"])
     TrainingConfig(**config["training"])
+    SamplingConfig(**config["sampling"])
     ModelConfig(**config["model"])
     EncoderTaskConfig(**config["encoder_task"])
     background = EncoderBackgroundConfig(**config["encoder_background"])

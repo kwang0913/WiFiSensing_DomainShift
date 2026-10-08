@@ -4,6 +4,12 @@ from torch.nn import functional as F
 from .contrastive import cross_domain_contrastive
 
 
+def adversarial_weight(max_weight, warmup_epochs, step, steps_per_epoch):
+    """Linear GRL warmup shared by task and background adversaries."""
+    ramp_steps = warmup_epochs * steps_per_epoch
+    return max_weight * (min(1.0, (step - 1) / ramp_steps) if ramp_steps else 1.0)
+
+
 def joint_objective(model, z, time, stft, labels, domains, config,
                     step=1, steps_per_epoch=1, *, task_difference=None, decoder=None):
     task_difference = task_difference or {"enabled": False, "weight": 0.0}
@@ -32,8 +38,8 @@ def joint_objective(model, z, time, stft, labels, domains, config,
         metrics.update(background_contrastive_loss=cl.item(), background_anchor_fraction=anchors / len(labels))
     if config.adversarial["enabled"]:
         head = model.background_activity_classifier
-        ramp = config.adversarial["warmup_epochs"] * steps_per_epoch
-        weight = config.adversarial["max_weight"] * (min(1., (step - 1) / ramp) if ramp else 1.)
+        weight = adversarial_weight(config.adversarial["max_weight"],
+                                    config.adversarial["warmup_epochs"], step, steps_per_epoch)
         logits = head(b, weight, labels=domains)
         ce = F.cross_entropy(logits, labels)
         # The head learns even at zero reversal weight; GRL scales only encoder gradients.
@@ -68,5 +74,4 @@ def difference_loss(z, b):
     zc = F.normalize(z - z.mean(0, keepdim=True), dim=0, eps=1e-6)
     bc = F.normalize(b - b.mean(0, keepdim=True), dim=0, eps=1e-6)
     return (zc.T @ bc).square().mean()
-
 

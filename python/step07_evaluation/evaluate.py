@@ -1,6 +1,7 @@
 """Report coverage over ALL test samples, including empty prediction sets."""
 import numpy as np
 
+
 def evaluate(labels, sets, point_predictions):
     labels = np.asarray(labels)
     sets = np.asarray(sets, dtype=bool)

@@ -1,4 +1,4 @@
-"""Estimate an target/source density ratio on frozen, clean embeddings."""
+"""Estimate a target/source density ratio on frozen, clean embeddings."""
 import numpy as np
 from copy import deepcopy
 from sklearn.linear_model import LogisticRegression

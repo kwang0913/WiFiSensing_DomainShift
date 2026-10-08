@@ -1,6 +1,7 @@
 """Convert calibrated p-values into prediction sets."""
 import numpy as np
 
+
 def prediction_sets(p_values, alpha=0.1):
     values = np.asarray(p_values)
     if not 0 < alpha < 1 or values.ndim != 2 or not np.isfinite(values).all():

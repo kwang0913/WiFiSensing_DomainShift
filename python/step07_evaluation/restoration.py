@@ -22,14 +22,24 @@ def restore_datasets(experiment, npy_root):
     # Restore exactly the saved four-way split.
     if set(experiment["splits"]) != {"train", "validation", "calibration", "test"}:
         raise ValueError("Expected current four-way split manifest")
-    split_samples = {k: np.asarray(experiment["splits"][k], dtype=np.int64).reshape(-1, 2)
-                     for k in ("train", "validation", "calibration", "test")}
-    checked_recordings = set()
-    for name, pairs in split_samples.items():
-        if not len(pairs):
+    split_samples = {}
+    seen = set()
+    for name in ("train", "validation", "calibration", "test"):
+        pairs = np.asarray(experiment["splits"][name])
+        if not pairs.size:
             raise ValueError(f"Empty saved split: {name}")
+        if pairs.ndim != 2 or pairs.shape[1] != 2 or not np.issubdtype(pairs.dtype, np.integer):
+            raise ValueError(f"Expected integer recording/segment pairs: {name}")
         if (pairs < 0).any() or (pairs[:, 0] >= len(recordings)).any():
             raise ValueError(f"Invalid saved indices: {name}")
+        identities = set(map(tuple, pairs))
+        if len(identities) != len(pairs) or seen & identities:
+            raise ValueError(f"Duplicate or overlapping saved segments: {name}")
+        seen.update(identities)
+        split_samples[name] = pairs
+
+    checked_recordings = set()
+    for name, pairs in split_samples.items():
         for i in np.unique(pairs[:, 0]):
             if i not in checked_recordings:
                 for path, shape in ((files[i], time_shape), (stft_files[i], stft_shape)):

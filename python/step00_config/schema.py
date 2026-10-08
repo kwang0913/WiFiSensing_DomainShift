@@ -76,19 +76,35 @@ class TrainingConfig:
 
     def __post_init__(self):
         self.early_stopping = asdict(EarlyStoppingConfig(**self.early_stopping))
-        if type(self.epochs) is not int or self.epochs < 1:
-            raise ValueError("training.epochs must be a positive integer")
+        for name in ("epochs", "batch_size"):
+            value = getattr(self, name)
+            if type(value) is not int or value < 1:
+                raise ValueError(f"training.{name} must be a positive integer")
+        for name in ("learning_rate", "weight_decay"):
+            value = getattr(self, name)
+            if (isinstance(value, bool) or not isinstance(value, (int, float))
+                    or not math.isfinite(value) or value < 0
+                    or (name == "learning_rate" and value == 0)):
+                raise ValueError(f"Invalid training.{name}")
+        if self.optimizer not in ("adamw", "adam", "sgd", "rmsprop"):
+            raise ValueError(f"Unknown training.optimizer: {self.optimizer}")
+        if not isinstance(self.optimizer_kwargs, dict):
+            raise ValueError("training.optimizer_kwargs must be a mapping")
+        if self.optimizer_kwargs.keys() & {"params", "lr", "weight_decay"}:
+            raise ValueError("optimizer_kwargs must not override params, lr, or weight_decay")
         if not isinstance(self.scheduler, dict) or self.scheduler.keys() - {"name", "kwargs"}:
             raise ValueError("Invalid training.scheduler")
-        self.scheduler = {"name": "none", "kwargs": {}, **self.scheduler}
-        if self.scheduler["name"] not in ("none", "cosine", "plateau") or not isinstance(self.scheduler["kwargs"], dict):
-            raise ValueError("Invalid training.scheduler")
+        self.scheduler = asdict(SchedulerConfig(**self.scheduler))
 
 
 @dataclass
 class SchedulerConfig:
     name: str = "none"
     kwargs: dict = field(default_factory=dict)
+
+    def __post_init__(self):
+        if self.name not in ("none", "cosine", "plateau") or not isinstance(self.kwargs, dict):
+            raise ValueError("Invalid training.scheduler")
 
 
 @dataclass
@@ -163,7 +179,7 @@ class WeightingConfig:
             raise ValueError("Invalid weighting.method")
         if not math.isfinite(self.C) or self.C <= 0:
             raise ValueError("weighting.C must be finite and positive")
-        if not isinstance(self.max_iter, int) or self.max_iter < 1:
+        if type(self.max_iter) is not int or self.max_iter < 1:
             raise ValueError("weighting.max_iter must be a positive integer")
         for value in (self.clip_min, self.clip_max):
             if value is not None and (not math.isfinite(value) or value <= 0):
@@ -181,6 +197,10 @@ class ModelConfig:
     def __post_init__(self):
         if self.kind not in ("dual_cnn", "cnn_transformer", "dual_link_graph"):
             raise ValueError(f"Unknown model kind: {self.kind}")
+        if type(self.embedding_dim) is not int or self.embedding_dim < 1:
+            raise ValueError("model.embedding_dim must be a positive integer")
+        if type(self.stft_frequency_bins) is not int or self.stft_frequency_bins < 3:
+            raise ValueError("model.stft_frequency_bins must be an integer of at least 3")
 
 
 @dataclass
@@ -200,9 +220,9 @@ class AdversarialConfig:
                 raise ValueError(f"{key} must be an integer")
         if not math.isfinite(self.max_weight) or self.max_weight < 0:
             raise ValueError("Adversarial max_weight must be finite and nonnegative")
-        if not isinstance(self.warmup_epochs, int) or self.warmup_epochs < 0:
+        if self.warmup_epochs < 0:
             raise ValueError("Adversarial warmup_epochs must be a nonnegative integer")
-        if not isinstance(self.hidden_dim, int) or self.hidden_dim < 1:
+        if self.hidden_dim < 1:
             raise ValueError("Adversarial hidden_dim must be a positive integer")
 
 
@@ -213,6 +233,8 @@ class ContrastiveConfig:
     temperature: float = 0.1
 
     def __post_init__(self):
+        if not isinstance(self.enabled, bool):
+            raise ValueError("Contrastive enabled must be boolean")
         if not math.isfinite(self.weight) or self.weight < 0:
             raise ValueError("Contrastive weight must be finite and nonnegative")
         if not math.isfinite(self.temperature) or self.temperature <= 0:
@@ -227,9 +249,11 @@ class SamplingConfig:
     samples_per_domain: int = 4
 
     def __post_init__(self):
+        if not isinstance(self.enabled, bool):
+            raise ValueError("Sampling enabled must be boolean")
         for name in ("classes_per_batch", "domains_per_class", "samples_per_domain"):
             value = getattr(self, name)
-            if not isinstance(value, int) or value < 1:
+            if type(value) is not int or value < 1:
                 raise ValueError(f"Sampling {name} must be a positive integer")
         if self.enabled and (self.classes_per_batch < 2 or self.domains_per_class < 2):
             raise ValueError("Balanced batches require at least two classes and two domain slots per class")
@@ -308,7 +332,6 @@ class EncoderTaskConfig:
         self.difference = validate_difference(self.difference, "encoder_task.difference")
         self.contrastive = asdict(ContrastiveConfig(**self.contrastive))
         self.adversarial = asdict(AdversarialConfig(**self.adversarial))
-
 
 
 @dataclass

@@ -32,12 +32,15 @@ def log_evaluation(evaluation, monitor_config):
                 [name, row["samples"], row.get("coverage"), row.get("mean_set_size")]
                 for name, row in evaluation.per_class.items()
             ]
-            run.log({
+            artifacts = {
                 "per_class": wandb.Table(
                     columns=["class", "samples", "coverage", "mean_set_size"],
                     data=class_rows,
                 ),
-                "coverage_set_size": wandb.Image(str(evaluation.cp_dir / "coverage_set_size.png")),
-            })
+            }
+            plot = evaluation.cp_dir / "coverage_set_size.png"
+            if plot.is_file():
+                artifacts["coverage_set_size"] = wandb.Image(str(plot))
+            run.log(artifacts)
     except Exception as error:
         warnings.warn(f"W&B evaluation logging failed; local results are saved: {error}", RuntimeWarning)

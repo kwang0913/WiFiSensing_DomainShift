@@ -4,7 +4,7 @@ Raw CSI recordings and extracted MAT features. Data and generated NPY caches are
 
 ## Datasets and labels
 
-The inventory covers feature files used by the notebook, with NPY labels verified on 2026-09-29. Counts are files, not segments. User identifiers below are anonymized for presentation; YAML domain values must match the actual, case-sensitive filename metadata.
+The inventory summarizes the datasets used in this project. Counts are files, not segments. User identifiers below are anonymized for presentation; YAML domain values must match the actual, case-sensitive filename metadata.
 
 | Dataset | Files | Users (anonymized) | `activity` labels | `position` labels |
 |---|---:|---|---|---|
@@ -22,7 +22,7 @@ Each listed user has all activities listed for that dataset, but recording count
 | self_time | `0310_morning/`, `0310_afternoon/`, `0310_night/`: 50 feature files each | Collection period is the parent directory; `c1`–`c5` are condition identifiers |
 | crossroom | `recordings/<user>/`, `generated_features/<user>/` | Numeric position/room codes in filenames |
 
-Source DAT recordings are available only for crossroom. Files use `<user>_<activity>_<position>[_rNN]`: `.dat` for recordings, `.mat` for CSI caches, and `_raw.mat` for extracted features. `_rNN` identifies repeated recordings. Physical room dimensions and antenna placements are not documented.
+The local dataset collection includes source DAT recordings only for crossroom; these are not distributed in this repository. Files use `<user>_<activity>_<position>[_rNN]`: `.dat` for recordings, `.mat` for CSI caches, and `_raw.mat` for extracted features. `_rNN` identifies repeated recordings. Physical room dimensions and antenna placements are not documented.
 
 Two active environment1 feature files contain merged recordings; `merge_source_index` and `merge_info` retain their provenance. Canonical activity aliases include `document → doc`, `walking/walkingtraj2 → walk`, `sitting → sit`, and `wiping → wipe`.
 
