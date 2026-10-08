@@ -220,3 +220,39 @@ See the [Python guide](python/README.md) for setup, configuration, code layout, 
 | [python/](python/README.md) | Notebook, models, experiment configuration, and evaluation |
 
 Datasets and generated experiment files are excluded from Git. Prepare the data locally before running.
+
+## Citation
+
+If you use this code in your research, please cite the relevant papers:
+
+```bibtex
+@inproceedings{wang2022solving,
+author = {Wang, Kailong and Shi, Cong and Cheng, Jerry and Wang, Yan and Xie, Minge and Chen, Yingying},
+title = {{Solving the WiFi Sensing Dilemma in Reality Leveraging Conformal Prediction}},
+year = {2023},
+isbn = {9781450398862},
+publisher = {Association for Computing Machinery},
+address = {New York, NY, USA},
+url = {https://doi.org/10.1145/3560905.3568529},
+doi = {10.1145/3560905.3568529},
+booktitle = {Proceedings of the 20th ACM Conference on Embedded Networked Sensor Systems},
+pages = {407–420},
+numpages = {14},
+keywords = {conformal prediction, domain variations, wifi sensing}}
+
+@ARTICLE{li2026wificp,
+  author={Li, Honglu and Ji, Qiufan and Shi, Cong and Wang, Yan and Cheng, Jerry Q. and Wang, Kailong and Xie, Minge and Chen, Yingying},
+  journal={IEEE Transactions on Mobile Computing}, 
+  title={Solving the WiFi Sensing Dilemma in Reality Leveraging Conformal Prediction}, 
+  year={2026},
+  volume={25},
+  number={9},
+  pages={13912-13928},
+  keywords={Activity recognition;Sensor systems;Human activity recognition;Aerospace and electronic systems;Antennas;Antennas and propagation;Central Processing Unit;Contacts;Wireless fidelity;Wireless LAN;Conformal prediction;deep learning;domain variations;WiFi sensing},
+  doi={10.1109/TMC.2026.3676932}}
+
+```
+
+## License
+
+The original source code in this repository is licensed under the [GNU General Public License, version 3 only](LICENSE) (`GPL-3.0-only`). Third-party materials retain their respective licenses. This software license does not grant rights to datasets or referenced publications.
