@@ -4,13 +4,13 @@ Raw CSI recordings and extracted MAT features. Data and generated NPY caches are
 
 ## Datasets and labels
 
-The inventory covers feature files used by the notebook, with NPY labels verified on 2026-09-29. Counts are files, not segments. Label values are case-sensitive.
+The inventory covers feature files used by the notebook, with NPY labels verified on 2026-09-29. Counts are files, not segments. User identifiers below are anonymized for presentation; YAML domain values must match the actual, case-sensitive filename metadata.
 
-| Dataset | Files | `user` labels | `activity` labels | `position` labels |
+| Dataset | Files | Users (anonymized) | `activity` labels | `position` labels |
 |---|---:|---|---|---|
 | setting_dataset | 72 | `user_1` ~ `user_6` | `baking`, `cooking`, `raisingarm`, `walk` (4) | `p1` |
-| self_time | 150 | `user_1`, ~ `user_5` | `doc`, `squat` (2) | `c1`, `c2`, `c3`, `c4`, `c5` |
-| crossroom | 125 | `user_1`, ~ `user_10` | `doc`, `sit`, `squat`, `walk`, `wipe` (5) | `103`, `501`, `503` |
+| self_time | 150 | `user_1` ~ `user_5` | `doc`, `squat` (2) | `c1`, `c2`, `c3`, `c4`, `c5` |
+| crossroom | 125 | `user_1` ~ `user_10` | `doc`, `sit`, `squat`, `walk`, `wipe` (5) | `103`, `501`, `503` |
 
 Each listed user has all activities listed for that dataset, but recording counts and position coverage vary.
 
@@ -52,6 +52,6 @@ S = reshape(s.segment_data_stft(1, 1, :, 1), 64, 65);
 
 The notebook converts MAT features to float32 NPY pairs and loads segments through mmap. Datasets with different shapes cannot be directly batched together.
 
-Domain holdout reserves complete target domains for test, then randomly divides source **segments** into train/validation/calibration. Source subsets may share files but never the same segment. The splitter uses filename fields, not parent-directory environment or collection-period names. Multiple held-out values are supported, such as `test_domains: [baking, walk]` for a user task with activity domains.
+Domain holdout reserves complete target domains for test and optionally isolates `validation_domains` for validation. Remaining source **segments** are split into train/calibration, plus validation when no domains are isolated, using the same fractions within each domain/class. Source subsets may share files but never the same segment. The splitter uses filename fields, not parent-directory environment or collection-period names. Multiple held-out values are supported, such as `test_domains: [baking, walk]` for a user task with activity domains.
 
 See the [Python guide](../python/README.md) for split design, its recording-dependence tradeoff, and saved indices, or the [MATLAB guide](../matlab/README.md) to extract features.

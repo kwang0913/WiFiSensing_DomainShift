@@ -1,6 +1,38 @@
-"""Read-only validation of background heads during training."""
+"""Domain-balanced task metrics and read-only background-head validation."""
 import torch
 from torch.nn import functional as F
+
+
+class DomainMetrics:
+    """Accumulate within-domain means across batches, then weight domains equally."""
+
+    def __init__(self):
+        self.totals = {}
+
+    @torch.no_grad()
+    def update(self, logits, labels, groups, criterion):
+        groups = groups.to(labels.device)
+        for group in groups.unique():
+            mask = groups == group
+            loss = criterion(logits[mask], labels[mask])
+            if not torch.isfinite(loss):
+                raise ValueError("Nonfinite validation loss")
+            count = int(mask.sum())
+            totals = self.totals.setdefault(int(group), [0., 0, 0])
+            totals[0] += loss.item() * count
+            totals[1] += int((logits[mask].argmax(1) == labels[mask]).sum())
+            totals[2] += count
+
+    def compute(self):
+        if not self.totals:
+            raise ValueError("Validation must be nonempty")
+        values = list(self.totals.values())
+        return {
+            "validation_loss": sum(loss / count for loss, _, count in values) / len(values),
+            "validation_accuracy": sum(correct / count for _, correct, count in values) / len(values),
+            "validation_samples": sum(count for _, _, count in values),
+            "validation_domains": len(values),
+        }
 
 
 @torch.no_grad()

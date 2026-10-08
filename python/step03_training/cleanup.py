@@ -4,15 +4,14 @@ import torch
 
 
 TRAINING_OBJECTS = (
-    "optimizer", "scheduler", "domain_optimizer", "domain_scheduler",
-    "background_activity_optimizer", "background_activity_scheduler",
-    "main_parameters", "augmenter", "criterion", "monitor",
+    "optimizer", "scheduler",
+    "augmenter", "criterion", "monitor",
     "checkpoint", "selected_checkpoint",
 )
 TRAINING_TENSORS = (
     "time", "stft", "labels", "logits", "embedding", "task_loss", "loss",
-    "domain_labels", "fit_logits", "fit_loss", "domain_logits", "domain_loss",
-    "background_embedding", "background_loss", "contrastive_loss", "known",
+    "domain_labels", "domain_logits", "domain_loss",
+    "background_loss", "contrastive_loss", "known", "groups",
 )
 
 

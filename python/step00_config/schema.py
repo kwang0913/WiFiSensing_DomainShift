@@ -10,11 +10,56 @@ class SplitConfig:
     test_fraction: float = 0.20
     mode: str = "domain_holdout"
     test_domains: list = field(default_factory=lambda: ["walk"])
+    validation_domains: list = field(default_factory=list)
+
+    def __post_init__(self):
+        if self.mode not in ("random", "domain_holdout"):
+            raise ValueError(f"Unknown split mode: {self.mode}")
+        for name in ("test_domains", "validation_domains"):
+            values = getattr(self, name)
+            if not isinstance(values, list) or any(not isinstance(v, str) for v in values):
+                raise ValueError(f"split.{name} must be a list of domain names")
+            if len(values) != len(set(values)):
+                raise ValueError(f"split.{name} contains duplicates")
+        if self.mode == "domain_holdout" and not self.test_domains:
+            raise ValueError("Choose a nonempty list of test_domains")
+        if self.validation_domains and self.mode != "domain_holdout":
+            raise ValueError("validation_domains requires domain_holdout mode")
+        if set(self.validation_domains) & set(self.test_domains):
+            raise ValueError("Validation and test domains must be disjoint")
+        fractions = [self.calibration_fraction]
+        if not self.validation_domains:
+            fractions.append(self.validation_fraction)
+        if self.mode == "random":
+            fractions.append(self.test_fraction)
+        if any(isinstance(f, bool) or not isinstance(f, (int, float)) or not math.isfinite(f)
+               or not 0 < f < 1 for f in fractions) or sum(fractions) >= 1:
+            raise ValueError("Use positive held-out fractions with a sum below one")
 
     @property
     def train_fraction(self):
         test_fraction = self.test_fraction if self.mode == "random" else 0
-        return 1 - self.validation_fraction - self.calibration_fraction - test_fraction
+        validation_fraction = 0 if self.validation_domains else self.validation_fraction
+        return 1 - validation_fraction - self.calibration_fraction - test_fraction
+
+
+@dataclass
+class EarlyStoppingConfig:
+    patience: int | None = 8
+    min_delta: float = 0.0
+    window: int = 5
+    relative_delta: float = 0.01
+    absolute_delta: float = 0.001
+
+    def __post_init__(self):
+        if self.patience is not None and (type(self.patience) is not int or self.patience < 1):
+            raise ValueError("early_stopping.patience must be positive or null")
+        if type(self.window) is not int or self.window < 1:
+            raise ValueError("early_stopping.window must be a positive integer")
+        for name in ("min_delta", "relative_delta", "absolute_delta"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+                raise ValueError(f"early_stopping.{name} must be finite and nonnegative")
 
 
 @dataclass
@@ -23,14 +68,16 @@ class TrainingConfig:
     batch_size: int = 8
     optimizer: str = "adamw"
     learning_rate: float = 0.001
-    patience: int | None = 8
-    min_delta: float = 0.0
+    early_stopping: dict = field(default_factory=lambda: asdict(EarlyStoppingConfig()))
     weight_decay: float = 1e-4
     optimizer_kwargs: dict = field(default_factory=dict)
 
     scheduler: dict = field(default_factory=lambda: {"name": "none", "kwargs": {}})
 
     def __post_init__(self):
+        self.early_stopping = asdict(EarlyStoppingConfig(**self.early_stopping))
+        if type(self.epochs) is not int or self.epochs < 1:
+            raise ValueError("training.epochs must be a positive integer")
         if not isinstance(self.scheduler, dict) or self.scheduler.keys() - {"name", "kwargs"}:
             raise ValueError("Invalid training.scheduler")
         self.scheduler = {"name": "none", "kwargs": {}, **self.scheduler}
@@ -143,35 +190,14 @@ class AdversarialConfig:
     max_weight: float = 0.1
     warmup_epochs: int = 10
     hidden_dim: int = 64
-    steps_per_batch: int = 2
-    optimizer: str = "sgd"
-    learning_rate: float = 0.001
-    weight_decay: float = 0.0001
-    optimizer_kwargs: dict = field(default_factory=lambda: {"momentum": 0.9, "nesterov": True})
-    scheduler: dict = field(default_factory=lambda: {"name": "none", "kwargs": {}})
 
     def __post_init__(self):
         for key in ("enabled", "conditional"):
             if not isinstance(getattr(self, key), bool):
                 raise ValueError(f"{key} must be boolean")
-        for key in ("steps_per_batch", "hidden_dim", "warmup_epochs"):
+        for key in ("hidden_dim", "warmup_epochs"):
             if type(getattr(self, key)) is not int:
                 raise ValueError(f"{key} must be an integer")
-        if self.optimizer not in ("sgd", "adam", "adamw", "rmsprop"):
-            raise ValueError("Invalid adversarial optimizer")
-        if not isinstance(self.optimizer_kwargs, dict):
-            raise ValueError("Adversarial optimizer_kwargs must be a mapping")
-        if not isinstance(self.scheduler, dict) or self.scheduler.keys() - {"name", "kwargs"}:
-            raise ValueError("Invalid adversarial scheduler")
-        self.scheduler = {"name": "none", "kwargs": {}, **self.scheduler}
-        if self.scheduler["name"] not in ("none", "cosine", "plateau") or not isinstance(self.scheduler["kwargs"], dict):
-            raise ValueError("Invalid adversarial scheduler")
-        if not isinstance(self.steps_per_batch, int) or self.steps_per_batch < 1:
-            raise ValueError("Adversarial steps_per_batch must be a positive integer")
-        if not math.isfinite(self.learning_rate) or self.learning_rate <= 0:
-            raise ValueError("Adversarial learning_rate must be finite and positive")
-        if not math.isfinite(self.weight_decay) or self.weight_decay < 0:
-            raise ValueError("Adversarial weight_decay must be finite and nonnegative")
         if not math.isfinite(self.max_weight) or self.max_weight < 0:
             raise ValueError("Adversarial max_weight must be finite and nonnegative")
         if not isinstance(self.warmup_epochs, int) or self.warmup_epochs < 0:

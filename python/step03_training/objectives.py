@@ -5,15 +5,16 @@ from .contrastive import cross_domain_contrastive
 
 
 def joint_objective(model, z, time, stft, labels, domains, config,
-                         step=1, steps_per_epoch=1, *, background=None, task_difference=None, decoder=None):
+                    step=1, steps_per_epoch=1, *, task_difference=None, decoder=None):
     task_difference = task_difference or {"enabled": False, "weight": 0.0}
     task_diff_on = task_difference["enabled"] and task_difference["weight"] > 0
     decoder_on = decoder is not None and decoder.enabled and decoder.weight > 0
-    weighted_terms = (config.domain, config.contrastive, config.difference)
-    if not config.adversarial["enabled"] and not task_diff_on and not decoder_on and not any(
-            term["enabled"] and term["weight"] > 0 for term in weighted_terms):
+    background_diff_on = config.difference["enabled"] and config.difference["weight"] > 0
+    # Enabled classification/CL terms are still measured when their weight is zero.
+    if not (config.adversarial["enabled"] or config.domain["enabled"] or config.contrastive["enabled"]
+            or task_diff_on or background_diff_on or decoder_on):
         return time.new_zeros(()), {}
-    b = background if background is not None else model.encode_background(time, stft)
+    b = model.encode_background(time, stft)
     loss = b.new_zeros(())
     metrics = {}
     if config.domain["enabled"]:
@@ -33,23 +34,19 @@ def joint_objective(model, z, time, stft, labels, domains, config,
         head = model.background_activity_classifier
         ramp = config.adversarial["warmup_epochs"] * steps_per_epoch
         weight = config.adversarial["max_weight"] * (min(1., (step - 1) / ramp) if ramp else 1.)
-        head.requires_grad_(False)
-        try:
-            logits = head(b, weight, labels=domains)
-        finally:
-            head.requires_grad_(True)
+        logits = head(b, weight, labels=domains)
         ce = F.cross_entropy(logits, labels)
-        if weight:
-            loss = loss + ce
+        # The head learns even at zero reversal weight; GRL scales only encoder gradients.
+        loss = loss + ce
         metrics.update(background_activity_loss=ce.item(), background_adversarial_weight=weight,
                        background_activity_accuracy=(logits.argmax(1) == labels).float().mean().item())
-    if config.difference["enabled"] or task_diff_on:
+    if background_diff_on or task_diff_on:
         # Detach the opposite branch so each switch controls only its own gradient.
         if task_diff_on:
             difference = difference_loss(z, b.detach())
             loss = loss + task_difference["weight"] * difference
             metrics["task_difference_loss"] = difference.item()
-        if config.difference["enabled"] and config.difference["weight"]:
+        if background_diff_on:
             difference = difference_loss(z.detach(), b)
             loss = loss + config.difference["weight"] * difference
             metrics["background_difference_loss"] = difference.item()

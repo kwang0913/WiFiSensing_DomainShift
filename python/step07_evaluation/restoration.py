@@ -5,7 +5,7 @@ import gc
 import json
 import numpy as np
 import torch
-from step00_config.schema import (ModelConfig, EncoderTaskConfig, AdversarialConfig,
+from step00_config.schema import (ModelConfig, AdversarialConfig,
                                  EncoderBackgroundConfig, DecoderConfig)
 from step01_preprocessing.dataset import NpySegments
 from step02_models.build import build_model
@@ -44,11 +44,17 @@ def restore_datasets(experiment, npy_root):
     return {name: NpySegments(files, stft_files, targets, pairs) for name, pairs in split_samples.items()}
 
 
+def architecture_adversarial(settings):
+    """Frozen restoration needs head architecture, not historical optimizer settings."""
+    return {key: settings[key] for key in ("enabled", "conditional", "hidden_dim") if key in settings}
+
+
 def restore_model(experiment, checkpoint_path, device):
     model_config = ModelConfig(**experiment["model"])
-    encoder_task_config = EncoderTaskConfig(**experiment["encoder_task"])
-    adversarial_config = AdversarialConfig(**encoder_task_config.adversarial)
-    encoder_background_config = EncoderBackgroundConfig(**experiment["encoder_background"])
+    adversarial_config = AdversarialConfig(**architecture_adversarial(experiment["encoder_task"].get("adversarial", {})))
+    background = experiment["encoder_background"]
+    encoder_background_config = EncoderBackgroundConfig(**{
+        **background, "adversarial": architecture_adversarial(background.get("adversarial", {}))})
     decoder_config = DecoderConfig(**experiment["decoder"])
     domain_names = experiment["domain_names"]
     time_shape, stft_shape = experiment["time_shape"], experiment["stft_shape"]
@@ -57,9 +63,8 @@ def restore_model(experiment, checkpoint_path, device):
     checkpoint_model = selected_checkpoint["model_config"]
     if asdict(ModelConfig(**checkpoint_model)) != asdict(model_config):
         raise ValueError("Checkpoint architecture differs from experiment manifest")
-    checkpoint_background = EncoderBackgroundConfig(**selected_checkpoint["encoder_background"])
     checkpoint_decoder = DecoderConfig(**selected_checkpoint["decoder"])
-    if asdict(checkpoint_background) != asdict(encoder_background_config):
+    if selected_checkpoint["encoder_background"] != background:
         raise ValueError("Checkpoint background configuration differs from experiment manifest")
     if asdict(checkpoint_decoder) != asdict(decoder_config):
         raise ValueError("Checkpoint decoder differs from experiment manifest")

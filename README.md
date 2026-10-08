@@ -14,7 +14,7 @@ The earlier [SenSys framework](https://www.winlab.rutgers.edu/~yychen/daisylab/p
 ## Contribution of this repository
 
 - Fuse a **CNN–temporal Transformer** branch for time-domain CSI with a **ViT-style patch Transformer** for STFT features, capturing temporal and time–frequency dependencies.
-- Evaluate on a newly collected [crossroom CSI dataset](data/README.md) with **125 recordings** comprising **4,273 extracted segments** from **10 users** performing **5 activities**.
+- Evaluate on a newly collected **300GB** [crossroom CSI dataset](data/README.md) with **125 recordings** comprising **4,273 extracted segments** from **10 users** performing **5 activities**.
 - Combine domain-adversarial training and supervised contrastive learning to encourage consistent, task-discriminative representations across domains, with independent switches for ablation.
 - Use segment-level training and calibration to obtain more calibration scores, improving empirical quantile resolution and mitigating abrupt changes in prediction sets caused by limited calibration samples.
 - Construct scores directly from softmax probabilities, avoiding a separately fitted scorer. KDE, SVM, and histogram-based gradient boosting remain optional comparisons.
@@ -23,7 +23,7 @@ The earlier [SenSys framework](https://www.winlab.rutgers.edu/~yychen/daisylab/p
 
 ## Network architecture
 
-The task model uses [CNNTransformer](python/step02_models/cnn_transformer.py): a CNN stem followed by **a temporal Transformer for time-domain CSI**, and **a ViT-style patch Transformer for channel-fused STFT features**. Both branches use positional encoding and self-attention before feature fusion and classification.
+The task model uses [CNNTransformer](python/step02_models/cnn_transformer.py): a CNN stem followed by **a temporal Transformer for time-domain CSI**, and **a ViT-style patch Transformer for channel-fused STFT features**. Both branches use positional encoding and self-attention before feature fusion and classification. The diagram uses the current baseline’s 64-dimensional embedding; `model.embedding_dim` is configurable.
 
 ```mermaid
 flowchart LR
@@ -38,20 +38,26 @@ flowchart LR
     TP --> C["Concat<br/>512"]
     SP --> C
     C --> F["Fusion<br/>512 → 128"]
-    F --> Z["Embedding<br/>128 → 32"]
-    Z --> H["Classifier<br/>32 → classes"]
+    F --> Z["Embedding<br/>128 → 64"]
+    Z --> H["Task classifier"]
+    Z -.-> DH["Domain adversarial<br/>classifier"]
+    Z -.-> CL["Contrastive learning<br/>embedding"]
 
     classDef time fill:#e8f1ff,stroke:#3b73b9,color:#1e293b
     classDef stft fill:#e7f5ec,stroke:#38845b,color:#1e293b
     classDef attention fill:#f0e9fa,stroke:#865bb0,color:#1e293b
     classDef head fill:#fff1df,stroke:#b87928,color:#1e293b
+    classDef objective fill:#fce8ec,stroke:#b85470,color:#1e293b
     class TS,TT time
     class SS,ST stft
     class TA,SA attention
-    class TP,SP,C,F,Z,H head
+    class TP,SP,C,F,Z head
+    class H,DH,CL objective
 ```
 
-Colors match the corresponding block diagrams: blue for time preprocessing, green for STFT preprocessing, purple for Transformer blocks, and orange for pooling and prediction. Gray identifies the reusable Conv block within the time stem.
+Colors match the corresponding block diagrams: blue for time preprocessing, green for STFT preprocessing, purple for Transformer blocks, and orange for pooling, fusion, and embedding. Gray identifies the reusable Conv blocks in the time stem; red marks classifiers and objectives, which are not expanded below. Dotted arrows lead to training-only paths.
+
+DA and CL are independently optional. The domain head minimizes domain CE; gradient reversal passes its negative, warmup-scaled gradient to the feature extractor. CL pulls together same-activity embeddings from different domains and contrasts them with different activities; same-activity, same-domain pairs are excluded. It adds no classifier or projection head. Task CE, CL, and DA gradients are combined in one backward pass and one shared optimizer step; auxiliary paths are unused at inference.
 
 <details>
 <summary>Block definitions</summary>
@@ -127,34 +133,31 @@ flowchart LR
 
 Dropout is 0.1, including attention-weight dropout. Each branch stacks two blocks.
 
-**Pooling and prediction head**
+**Pooling, fusion, and embedding**
 
 ```mermaid
 flowchart LR
-    subgraph BLOCK["Pooling and prediction head"]
+    subgraph BLOCK["Pooling, fusion, and embedding"]
         direction LR
-        T["Transformer output<br/>Time tokens"] --> TP["Adaptive average pool<br/>4 positions"]
-        TP --> TF["Flatten: 256"]
         S["Transformer output<br/>STFT tokens"] --> R["Restore patch grid"]
         R --> SP["Adaptive average pool<br/>2 × 2"]
         SP --> SF["Flatten: 256"]
-        TF --> C["Concat: 512"]
-        SF --> C
+        T["Transformer output<br/>Time tokens"] --> TR["Transpose<br/>channels × tokens"]
+        TR --> TP["Adaptive average pool<br/>4 positions"]
+        TP --> TF["Flatten: 256"]
+        SF --> C["Concat: 512"]
+        TF --> C
         C --> F["Linear 512 → 128<br/>GELU"]
-        F --> E["Linear 128 → 32<br/>Embedding"]
-        E --> H["Linear 32 → classes"]
-        H --> P["Softmax probabilities"]
-        P -.-> SCORE["CP / APS scoring"]
+        F --> E["Linear 128 → 64<br/>Embedding"]
     end
     style BLOCK fill:#fff1df,stroke:#b87928,color:#1e293b
     classDef default fill:#ffffff,stroke:#64748b,color:#1e293b
     classDef attention fill:#f0e9fa,stroke:#865bb0,color:#1e293b
     class T,S attention
 ```
+The two Transformer stacks have independent weights.
 
 </details>
-
-The two Transformer stacks have independent weights. Adversarial and contrastive objectives act on the embedding during training. With 5 classes and embedding width 32, the task model has 458,277 parameters, excluding auxiliary heads and the optional background branch.
 
 ## Results
 
@@ -189,7 +192,7 @@ Compared with softmax CP, APS substantially reduces empty predictions, producing
 ## Workflow
 
 1. **Prepare data.** Extract aligned, filtered CSI segments and paired STFT features with MATLAB, then convert MAT features to memory-mapped NPY files in the notebook.
-2. **Train and select.** Hold out the selected target domains for test and split source segments into training, validation, and calibration sets. Train a paired-input model and select its checkpoint using validation loss. YAML controls experiments; optional W&B logging records metrics and gradients.
+2. **Train and select.** Hold out the selected target domains for test and split source segments into training, validation, and calibration sets. Train a paired-input model and select its checkpoint using domain-mean validation CE after active DA warmup. YAML controls experiments; optional W&B logging records metrics and gradients.
 3. **Calibrate and evaluate.** Freeze the model. Use its probabilities directly or fit an optional scorer on training embeddings, then calibrate on the separate calibration split. Evaluate target-domain accuracy, prediction-set coverage, and set size. Optional weighting uses unlabeled target inputs; target labels are used only for evaluation.
 
 ## Run an experiment

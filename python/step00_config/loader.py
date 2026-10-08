@@ -5,7 +5,7 @@ from pathlib import Path
 import yaml
 
 from .schema import (ModelConfig, EncoderBackgroundConfig, EncoderTaskConfig,
-                     DecoderConfig, TrainingConfig, CalibrationConfig)
+                     DecoderConfig, TrainingConfig, CalibrationConfig, SplitConfig)
 from .evaluation import SCORE_CONFIGS, parse_evaluation_settings
 
 BASELINE = Path(__file__).resolve().parents[1] / "experiments/baseline.yaml"
@@ -16,7 +16,7 @@ def _merge(base, overrides, section="experiment"):
     unknown = overrides.keys() - base.keys()
     if unknown:
         raise ValueError(f"Unknown {section} settings: {sorted(unknown)}")
-    # Apply this at every nesting level, including adversarial.scheduler.
+    # Optimizer and scheduler options are replaced when switching algorithms.
     for selector, parameters in (("optimizer", "optimizer_kwargs"), ("name", "kwargs")):
         if selector in base and parameters in base and overrides.get(selector, base[selector]) != base[selector]:
             base[parameters] = {}
@@ -49,6 +49,7 @@ def load_config(path=None):
     datasets = config["data"]["datasets"]
     if not isinstance(datasets, list) or not datasets:
         raise ValueError("data.datasets must be a nonempty list of cache directories")
+    SplitConfig(**config["split"])
     TrainingConfig(**config["training"])
     ModelConfig(**config["model"])
     EncoderTaskConfig(**config["encoder_task"])

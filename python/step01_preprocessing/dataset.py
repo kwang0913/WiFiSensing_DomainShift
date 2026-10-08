@@ -7,12 +7,15 @@ from .standardize import standardize_time
 
 class NpySegments(Dataset):
     """Read one segment at a time; keep only the latest recording pair mapped."""
-    def __init__(self, time_files, stft_files, labels, samples, domain_labels=None):
+    def __init__(self, time_files, stft_files, labels, samples, domain_labels=None, group_labels=None):
+        if group_labels is not None and domain_labels is None:
+            raise ValueError("Validation groups require explicit domain labels")
         self.time_files = time_files
         self.stft_files = stft_files
         self.labels = labels
         self.samples = samples
         self.domain_labels = domain_labels
+        self.group_labels = group_labels
         self.current_file = None
         self.time = self.stft = None
 
@@ -35,4 +38,8 @@ class NpySegments(Dataset):
         sample = (torch.from_numpy(time).permute(2, 0, 1),
                 torch.from_numpy(stft).permute(2, 0, 1),
                 int(self.labels[file_index]))
-        return sample if self.domain_labels is None else (*sample, int(self.domain_labels[file_index]))
+        if self.domain_labels is not None:
+            sample = (*sample, int(self.domain_labels[file_index]))
+        if self.group_labels is not None:
+            sample = (*sample, int(self.group_labels[file_index]))
+        return sample
