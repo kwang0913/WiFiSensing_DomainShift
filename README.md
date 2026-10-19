@@ -15,7 +15,7 @@ The earlier [SenSys framework](https://www.winlab.rutgers.edu/~yychen/daisylab/p
 
 - Fuse a **CNN–temporal Transformer** branch for time-domain CSI with a **ViT-style patch Transformer** for STFT features, capturing temporal and time–frequency dependencies.
 - Evaluate on a newly collected **300GB** [crossroom CSI dataset](data/README.md) with **125 recordings** comprising **4,273 extracted segments** from **10 users** performing **5 activities**.
-- Combine domain-adversarial training and supervised contrastive learning to encourage consistent, task-discriminative representations across domains, with independent switches for ablation.
+- Combine **domain-adversarial training** and **supervised contrastive learning** to encourage consistent, task-discriminative representations across domains, with independent switches for ablation.
 - Use segment-level training and calibration to obtain more calibration scores, improving empirical quantile resolution and mitigating abrupt changes in prediction sets caused by limited calibration samples.
 - Construct scores directly from softmax probabilities, avoiding a separately fitted scorer. KDE, SVM, and histogram-based gradient boosting remain optional comparisons.
 - Implement randomized adaptive prediction sets (APS) from [Romano, Sesia, and Candès](https://arxiv.org/abs/2006.02544), using cumulative class probabilities to adapt set size to each input.
